@@ -184,7 +184,12 @@ def test_next_google_card_is_loaded_alone(app, client, google):
     for other in set(NAMES) - {shown}:
         assert NAMES[other] not in html
     assert f'<img src="/photo/places/{shown}/photos/photo-ref-1"' in html
-    assert "4.5 ★ · €€ · 330 m" in html
+    # U6 (D29) changed this line, with Timo's OK as owner of the fork: the facts are no longer
+    # one line "4.5 ★ · €€ · 330 m" but the rating and chips on page 1 of the card.
+    assert "★ 4.5" in html
+    assert '<li class="chip" data-chip="distance">330 m</li>' in html
+    assert '<li class="chip" data-chip="price">€€</li>' in html
+    assert "4.5 ★ · €€ · 330 m" not in html
     assert "Google Maps" in html
     assert 'name="option_id"' in html
     for label in ("Rather yes", "Fine with me", "Rather not"):

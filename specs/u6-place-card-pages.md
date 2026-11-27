@@ -56,13 +56,13 @@ The exact list is made when the new tests are written; no test is removed withou
 - Maps on other pages (room page, result) – the result already has its embed map.
 - Description and "serves" chips: dropped from the card (Google's description is often missing); can come back on page 2 later.
 
-## Where the build differs from the text above (decisions for Timo, all easy to undo)
-1. **The Google Maps button keeps A10's text and link.** `tests/test_swipe_rating.py` (A10, reviewed, not in the list above) pins exactly one link with the text *Menu & reviews on Google Maps* pointing to `places.place_page_url(...)`, also for a card whose details failed. So page 1's button has that text and link (styled as a button, `class="maps-button"`), and `googleMapsUri` is **not** asked for (it would be a field nobody shows). To get *Open in Google Maps* with `googleMapsUri`: change the two A10 menu-link tests, add `googleMapsUri` to `BACK_FIELD_MASK`, read it in `read_back` and use it in `place_card_pages`.
-2. **C2c's facts line stays on page 1.** `tests/test_cards_vote_result.py::test_next_google_card_is_loaded_alone` (reviewed) pins the text `4.5 ★ · €€ · 330 m` on the rating page. Page 1 therefore still shows it as one small grey line (`.place-facts`) under the chips, although the chips say the same. It can go once that test may change.
-3. **`utcOffsetMinutes` is asked for as well**, so "today" (the chip and the highlighted day) is the day *at the place*, not on the server (UTC). Without it the server's UTC day is used. It costs nothing extra: the call is already billed at the highest level because of `reviews` and `currentOpeningHours`.
-4. **Description and "serves" fields are no longer asked for** (`editorialSummary`, `serves…`, `goodForGroups`, `outdoorSeating`, `reservable`): the card no longer shows them, and AGENTS.md says the field mask holds only what the UI shows. `read_back` no longer reads them.
-5. **With the back mask, `details["back"]` is always there** (its parts may be empty), so every Google card with details on the rating page gets its three pages; a page without content says *No photos on Google.*, *No opening hours on Google.* or *No reviews on Google.*
-6. **"Open today until …"** uses the closing time of today's last period (lunch and dinner: the dinner's end); *Open 24 hours* for a period without closing time; no chip if Google sent the week's lines but no periods.
+## Where the build differs from the text above (decisions for Timo)
+a. **Resolved (Timo's OK on 2026-11-27):** the Google Maps button is *Open in Google Maps* with `googleMapsUri` (new tab), as specified; `googleMapsUri` is in `BACK_FIELD_MASK`. Only an `https://` link is used. Without one, and on a card whose details failed, the same button links to the search URL built from the place id (`places.place_page_url`), so the page always has exactly one Google Maps link. A10's two tests for *Menu & reviews on Google Maps* were replaced (table below).
+b. **Resolved (Timo's OK on 2026-11-27):** C2c's one-line facts `4.5 ★ · €€ · 330 m` are gone from page 1; the line in `tests/test_cards_vote_result.py::test_next_google_card_is_loaded_alone` now checks the rating and the chips.
+c. **`utcOffsetMinutes` is asked for as well**, so "today" (the chip and the highlighted day) is the day *at the place*, not on the server (UTC). Without it the server's UTC day is used. It costs nothing extra: the call is already billed at the highest level because of `reviews` and `currentOpeningHours`.
+d. **Description and "serves" fields are no longer asked for** (`editorialSummary`, `serves…`, `goodForGroups`, `outdoorSeating`, `reservable`): the card no longer shows them, and AGENTS.md says the field mask holds only what the UI shows. `read_back` no longer reads them.
+e. **With the back mask, `details["back"]` is always there** (its parts may be empty), so every Google card with details on the rating page gets its three pages; a page without content says *No photos on Google.*, *No opening hours on Google.* or *No reviews on Google.*
+f. **"Open today until …"** uses the closing time of today's last period (lunch and dinner: the dinner's end); a period that opened yesterday and is still open keeps today open until it closes (a bar at 01:00); *Open 24 hours* for a period without closing time; no chip if Google sent the week's lines but no periods.
 
 ## Checks (one line = one test), `tests/test_u6_place_card_pages.py` (Google faked)
 - [ ] Three pages `data-card-page="1|2|3"` with ids `card-page-<option>-<n>`; no checkbox, no flip labels, no back, no dots.
@@ -71,14 +71,14 @@ The exact list is made when the new tests are written; no test is removed withou
 - [ ] Only the next card gets pages, with one `BACK_FIELD_MASK` call; manual and failed options get no pages, bars or map.
 - [ ] Page 1: map `<img src="/map/…">` in a box `data-card-map`; round photo through `/photo/`, name, kind in this order; `★ 4.5`, stars filled to 90 % by CSS (`aria-hidden`), `1,234 reviews` (`1 review`); no stars without a rating.
 - [ ] Chips distance, price, today's hours (`chip-open` / `chip-closed`), each only when Google sent the fact; the short address; no map image without a location, the address stays.
-- [ ] The Google Maps button exactly once, on page 1, new tab.
+- [ ] The *Open in Google Maps* button exactly once, on page 1, new tab, with `googleMapsUri`; without a usable (https) one, the search link; a failed card keeps one such link; a manual option and the room page have none.
 - [ ] Page 2: big photo and up to three small ones, each with its author link; the seven week lines, today `aria-current="date"`; *No opening hours on Google.* / *No photos on Google.*
 - [ ] Page 3: up to three reviews with every part and their *Read on Google Maps* links; each text whole in `.review-text`, which the CSS cuts to four lines; *No reviews on Google.*; description and offers are not shown.
 - [ ] Three bars link to `#card-page-<option>-<n>` with names, the first `aria-current`; CSS shows the `:target` page, page 1 by default, and `.is-current` once `swipe.js` adds `pages-ready`.
 - [ ] `swipe.js`: tap (< 10 px) on the right/left half changes the page, bars change the page without jumping, links are left alone, no flip; swipes still rate; A10's static check.
 - [ ] Google text escaped on every page; the key never in the page (`key=`, `googleapis`).
-- [ ] `BACK_FIELD_MASK == CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,utcOffsetMinutes"`; the back has `reviews, photos, address, opening_hours`; unusable hours or address give `None`; other pages keep `CARD_FIELD_MASK`.
-- [ ] `opening_hours_view`: last period's closing time, *Closed today*, past midnight, *Open 24 hours*, the place's day (UTC offset), no today text without periods, `None` without hours.
+- [ ] `BACK_FIELD_MASK == CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,googleMapsUri,utcOffsetMinutes"`; the back has `reviews, photos, address, opening_hours, google_maps_uri`; unusable hours or address give `None`; other pages keep `CARD_FIELD_MASK`.
+- [ ] `opening_hours_view`: last period's closing time, *Closed today*, past midnight, still open from yesterday, *Open 24 hours*, the place's day (UTC offset), no today text without periods, `None` without hours.
 - [ ] `/map/<token>`: token signed with `SECRET_KEY` (itsdangerous); one Static Maps call (`600x300`, `scale=2`, one marker, 5 s), `Cache-Control: private, max-age=600`; wrong, changed, foreign or badly filled token: 404 without a Google call; a browser not in a room with the place: the same 404; no key: 503 without a call; Google error or unreachable: 503, never the key.
 - [ ] Viewing the page and loading the map write nothing; no Google text in the database.
 
@@ -131,6 +131,16 @@ Each removed test is replaced by the named tests in `tests/test_u6_place_card_pa
 | `test_offers_contain_only_true_fields_in_the_fixed_order` | `test_the_back_has_reviews_photos_address_and_hours_and_no_description_or_offers` |
 | `test_all_offers_have_their_label` | `test_the_back_has_reviews_photos_address_and_hours_and_no_description_or_offers` |
 | `test_no_true_field_means_no_offers` | `test_unusable_opening_hours_give_none_and_never_raise` |
+
+`tests/test_swipe_rating.py` (A10, Timo's OK on 2026-11-27):
+| Removed | Replaced by |
+|---|---|
+| `test_google_card_shows_the_menu_link` | `test_the_google_maps_button_is_on_page_one_only_and_only_once`, `test_without_a_usable_google_maps_uri_the_button_falls_back_to_the_search_link` |
+| `test_menu_link_uses_the_fallback_name_when_details_failed` | `test_a_failed_google_card_keeps_one_fallback_google_maps_link` |
+
+The other A10 tests stay unchanged (`test_manual_option_has_no_menu_link_but_swipes` and `test_room_page_cards_have_no_menu_link` still hold; `test_a_manual_option_and_the_room_page_have_no_google_maps_button` checks the same for the new text).
+
+`tests/test_cards_vote_result.py` (C2c, Timo's OK on 2026-11-27): in `test_next_google_card_is_loaded_alone` the line `assert "4.5 ★ · €€ · 330 m" in html` is replaced by checks for `★ 4.5` and the chips `330 m` and `€€` (and that the old line is gone). The rest of the test is unchanged.
 
 Kept unchanged in these files because they still describe valid behaviour: the one-call/back-mask tests, manual and failed options without pages, the overview/room/result pages with the card mask only, key never in the page, viewing writes nothing, rating and joker by the forms, hidden-but-focusable buttons, joker question, no-scroll class, slim line and menu, A10's static check, and every reading test for reviews, photos, kind and rating count.
 

@@ -315,19 +315,10 @@ def test_place_page_url():
         assert places.place_page_url(bad, "Pizza Roma") is None
 
 
-def test_google_card_shows_the_menu_link(app, client):
-    room_id, ids = voting_room(app, client, place_ids=["place-a"])
-    links = menu_links(page(client, f"/rooms/{room_id}/vote"))
-    assert links == [(places.place_page_url("place-a", "Pizza Roma"), "_blank", "noopener noreferrer")]
+# test_google_card_shows_the_menu_link: replaced by U6 (see specs/u6-place-card-pages.md; Timo's OK).
 
 
-def test_menu_link_uses_the_fallback_name_when_details_failed(app, client):
-    room_id, ids = voting_room(app, client, place_ids=["place-gone"])
-    html = page(client, f"/rooms/{room_id}/vote")
-    assert "Details are not available right now." in html
-    assert menu_links(html) == [
-        (places.place_page_url("place-gone", FALLBACK_NAME), "_blank", "noopener noreferrer")
-    ]
+# test_menu_link_uses_the_fallback_name_when_details_failed: replaced by U6 (see specs/u6-place-card-pages.md; Timo's OK).
 
 
 def test_menu_link_makes_no_extra_google_call(app, client, google):

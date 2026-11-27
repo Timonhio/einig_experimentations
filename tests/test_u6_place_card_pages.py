@@ -28,9 +28,10 @@ APP_CSS = PROJECT_ROOT / "app" / "static" / "css" / "app.css"
 FAKE_KEY = "fake-key-for-tests-0123456789"
 DETAILS_URL = "https://places.googleapis.com/v1/places/"
 STATIC_MAP_URL = "https://maps.googleapis.com/maps/api/staticmap"
-# The A10 test (tests/test_swipe_rating.py) pins this text and the place_page_url link;
-# U6 shows it as the one Google Maps button on page 1 (see the spec, "Decisions for Timo").
-MAPS_BUTTON_TEXT = "Menu & reviews on Google Maps"
+MAPS_BUTTON_TEXT = "Open in Google Maps"
+OLD_MENU_TEXT = "Menu & reviews on Google Maps"
+FALLBACK_NAME = "Place from Google Maps"
+MAPS_URI = "https://maps.google.com/?cid=1234567890"
 READ_TEXT = "Read on Google Maps"
 REVIEWS_LINE = "Reviews selected by Google"
 NO_HOURS_TEXT = "No opening hours on Google."
@@ -131,6 +132,7 @@ def full_answer(place_id="place-a", name="Pizza Roma"):
         "photos": [photo(place_id, number) for number in range(1, 6)],
         "reviews": [review(1), review(2), review(3), review(4)],
         "shortFormattedAddress": ADDRESS,
+        "googleMapsUri": MAPS_URI,
         "currentOpeningHours": {"openNow": True, "periods": every_day(), "weekdayDescriptions": list(WEEK)},
         "utcOffsetMinutes": 0,
     }
@@ -523,12 +525,43 @@ def test_without_a_location_there_is_no_map_image_but_the_address_stays(app, cli
 
 def test_the_google_maps_button_is_on_page_one_only_and_only_once(app, client):
     html, room_id, ids = rating_page(app, client)
-    expected = places.place_page_url("place-a", "Pizza Roma")
+    expected = MAPS_URI  # Google's own link for the place (googleMapsUri)
     assert maps_buttons(html) == [expected]
+    assert OLD_MENU_TEXT not in html_lib.unescape(html)
     assert maps_buttons(page_html(html, 1)) == [expected]
     link = [item for item in links_in(page_html(html, 1)) if item[3] == MAPS_BUTTON_TEXT][0]
     assert link[1:3] == ("_blank", "noopener noreferrer")
     assert maps_buttons(page_html(html, 2)) == [] and maps_buttons(page_html(html, 3)) == []
+    # The only other links to Google Maps are the reviews' own "Read on Google Maps" (Google terms).
+    google_links = [link for link in links_in(html) if "google.com/maps" in link[0] or "maps.google" in link[0]]
+    assert {link[3] for link in google_links} <= {MAPS_BUTTON_TEXT, READ_TEXT, "Maria Silva"} | {f"Author {n}" for n in (1, 2, 3)}
+
+
+@pytest.mark.parametrize("uri", [None, "", "javascript:alert(1)", "http://maps.google.com/?cid=1", 5])
+def test_without_a_usable_google_maps_uri_the_button_falls_back_to_the_search_link(app, client, google, uri):
+    answer_with(google, googleMapsUri=uri)  # None leaves the field out
+    html, room_id, ids = rating_page(app, client)
+    assert maps_buttons(html) == [places.place_page_url("place-a", "Pizza Roma")]
+    assert "javascript:" not in html
+
+
+def test_a_failed_google_card_keeps_one_fallback_google_maps_link(app, client, google):
+    google.responses[DETAILS_URL + "place-a"] = FakeResponse(status_code=500, body={})
+    html, room_id, ids = rating_page(app, client)
+    assert DETAILS_MISSING in html
+    links = [item for item in links_in(html) if item[3] == MAPS_BUTTON_TEXT]
+    assert links == [(places.place_page_url("place-a", FALLBACK_NAME), "_blank", "noopener noreferrer", MAPS_BUTTON_TEXT)]
+
+
+def test_a_manual_option_and_the_room_page_have_no_google_maps_button(app, client):
+    html, room_id, ids = rating_page(app, client, place_ids=(), labels=("Burger Bar",))
+    assert MAPS_BUTTON_TEXT not in html
+    other = app.test_client()
+    room_id = create_room(other, "Ben")
+    add_options(app, room_id, place_ids=["place-a"])
+    room_html = page(other, f"/rooms/{room_id}")
+    assert "Pizza Roma" in room_html
+    assert MAPS_BUTTON_TEXT not in room_html
 
 
 # --- Page 2: how it looks and when it is open ----------------------------------------------
@@ -713,7 +746,9 @@ def test_back_field_mask_adds_hours_address_and_time_zone_and_drops_description_
     assert places.DETAILS_FIELD_MASK == "displayName,rating,priceLevel,location,photos"
     assert CARD_FIELD_MASK == places.DETAILS_FIELD_MASK + ",userRatingCount,primaryTypeDisplayName"
     assert "*" not in places.DETAILS_FIELD_MASK and "*" not in CARD_FIELD_MASK
-    assert BACK_FIELD_MASK == CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,utcOffsetMinutes"
+    assert BACK_FIELD_MASK == (
+        CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,googleMapsUri,utcOffsetMinutes"
+    )
     for dropped in ("editorialSummary", "servesDinner", "servesWine", "goodForGroups", "outdoorSeating", "reservable"):
         assert dropped not in BACK_FIELD_MASK
     assert "*" not in BACK_FIELD_MASK
@@ -725,8 +760,9 @@ def test_the_back_has_reviews_photos_address_and_hours_and_no_description_or_off
     body.update({"editorialSummary": {"text": "Wood-fired pizza."}, "servesDinner": True})
     google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=body)
     back = places.get_place_details(FAKE_KEY, "place-a", BACK_FIELD_MASK)["back"]
-    assert set(back) == {"reviews", "photos", "address", "opening_hours"}
+    assert set(back) == {"reviews", "photos", "address", "opening_hours", "google_maps_uri"}
     assert back["address"] == ADDRESS
+    assert back["google_maps_uri"] == MAPS_URI
     assert back["opening_hours"]["weekday_descriptions"] == WEEK
     assert back["opening_hours"]["utc_offset_minutes"] == 0
     assert len(back["opening_hours"]["periods"]) == 7
@@ -789,6 +825,18 @@ def test_a_day_without_period_is_closed_today():
 def test_a_period_past_midnight_shows_its_closing_time():
     late = [{"open_day": 1, "open_minutes": 20 * 60, "close_day": 2, "close_minutes": 2 * 60}]
     assert places.opening_hours_view(hours_with(late), MONDAY_MORNING)["today_text"] == "Open today until 02:00"
+
+
+def test_a_period_that_opened_yesterday_keeps_today_open_until_it_closes():
+    # Open Sunday 20:00 to Monday 02:00, nothing opens on Monday.
+    sunday_night = [{"open_day": 0, "open_minutes": 20 * 60, "close_day": 1, "close_minutes": 2 * 60}]
+    one_am = datetime(2026, 11, 30, 1, 0, tzinfo=timezone.utc)
+    view = places.opening_hours_view(hours_with(sunday_night), one_am)
+    assert view["today_text"] == "Open today until 02:00"
+    assert view["open_today"] is True
+    # After it closed, Monday is closed.
+    three_am = datetime(2026, 11, 30, 3, 0, tzinfo=timezone.utc)
+    assert places.opening_hours_view(hours_with(sunday_night), three_am)["today_text"] == "Closed today"
 
 
 def test_always_open_says_open_24_hours():
