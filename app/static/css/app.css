@@ -1268,7 +1268,6 @@ a.danger-outline-button:focus-visible { outline: 3px solid var(--einig-accent-2)
 }
 .card-chips .chip-open { background: #DCFCE7; color: #166534; }
 .card-chips .chip-closed { background: #FEE2E2; color: #991B1B; }
-.place-facts { margin: 0; color: var(--einig-card-muted); }
 .place-address { margin: 0.25rem 0; font-size: 0.875rem; color: var(--einig-card-muted); }
 .maps-button {
   display: block;

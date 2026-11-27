@@ -1256,11 +1256,15 @@ def render_vote_page(room, participant, errors: list[str] | None = None):
         back_for=back_for,
     )
     cards = dict(zip(shown_ids, loaded))
-    # A10: the next card links to the place's Google Maps page (menu, reviews); no API call.
+    # A10/U6: the next card has one "Open in Google Maps" link: Google's own link for the place
+    # (googleMapsUri, from the same details call), else a search link built from the place id.
     menu_url = None
     # Only while voting: outside it no card is loaded (and none is shown).
     if next_option in cards and cards[next_option]["source"] == "google":
-        menu_url = places.place_page_url(options[next_option]["place_id"], cards[next_option]["name"])
+        back = cards[next_option].get("back") or {}
+        menu_url = back.get("google_maps_uri") or places.place_page_url(
+            options[next_option]["place_id"], cards[next_option]["name"]
+        )
     # U6: page 1 shows a map image through our own /map/ route (signed token, key stays here),
     # page 2 the week's opening hours with today marked. No extra Google call for either here.
     map_url = None

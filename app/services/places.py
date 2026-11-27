@@ -348,9 +348,11 @@ DETAILS_FIELD_MASK = "displayName,rating,priceLevel,location,photos"
 # C10 (F30): every card also asks for the kind of place and the number of ratings.
 CARD_FIELD_MASK = DETAILS_FIELD_MASK + ",userRatingCount,primaryTypeDisplayName"
 # U6 (D29): only the one card on the rating page asks for its pages: reviews, the opening
-# hours, the short address and the place's time zone offset (to know which day is "today"
-# there). Description and "serves" fields were dropped with the flip (not shown any more).
-BACK_FIELD_MASK = CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,utcOffsetMinutes"
+# hours, the short address, the place's Google Maps link and its time zone offset (to know
+# which day is "today" there). Description and "serves" fields were dropped with the flip.
+BACK_FIELD_MASK = (
+    CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,googleMapsUri,utcOffsetMinutes"
+)
 MAX_REVIEWS_SHOWN = 3
 MAX_EXTRA_PHOTOS = 3
 PHOTO_MEDIA_URL = "https://places.googleapis.com/v1/{photo_name}/media"
@@ -500,7 +502,7 @@ def read_opening_hours(data: dict) -> dict | None:
     return {"weekday_descriptions": list(lines), "periods": periods, "utc_offset_minutes": offset}
 
 
-def read_point(point) -> tuple[int, int] | None:
+def read_point(point: object) -> tuple[int, int] | None:
     """(day, minutes after midnight) of one opening or closing point, or None if it is unusable."""
     if not isinstance(point, dict):
         return None
@@ -513,7 +515,7 @@ def read_point(point) -> tuple[int, int] | None:
     return day, hour * 60 + minute
 
 
-def read_period(raw) -> dict | None:
+def read_period(raw: object) -> dict | None:
     """One opening period, or None if its opening point is unusable."""
     if not isinstance(raw, dict):
         return None
@@ -533,7 +535,8 @@ def opening_hours_view(opening_hours: dict | None, now: datetime) -> dict | None
     """U6: today's chip text and the week list with today marked, or None without opening hours.
 
     "Today" is the day at the place (Google's UTC offset), or the UTC day without an offset.
-    today_text is None when Google sent the week's lines but no usable periods.
+    today_text is None when Google sent the week's lines but no usable periods. A period that
+    opened yesterday and has not closed yet keeps today "open" (a bar at 01:00).
     """
     if opening_hours is None:
         return None
@@ -541,6 +544,8 @@ def opening_hours_view(opening_hours: dict | None, now: datetime) -> dict | None
     # Google's week list starts on Monday, like Python's weekday(); its periods count 0 = Sunday.
     today_index = local.weekday()
     google_today = (today_index + 1) % 7
+    google_yesterday = (google_today - 1) % 7
+    minutes_now = local.hour * 60 + local.minute
     week = [
         {"text": line, "is_today": index == today_index}
         for index, line in enumerate(opening_hours["weekday_descriptions"])
@@ -559,7 +564,19 @@ def opening_hours_view(opening_hours: dict | None, now: datetime) -> dict | None
                 hours, minutes = divmod(last["close_minutes"], 60)
                 today_text, open_today = f"Open today until {hours % 24:02d}:{minutes:02d}", True
             else:
-                today_text = "Closed today"
+                # No period opens today, but last night's may still run (e.g. until 02:00).
+                still_open = [
+                    period for period in periods
+                    if period["open_day"] == google_yesterday
+                    and period["close_day"] == google_today
+                    and period["close_minutes"] > minutes_now
+                ]
+                if still_open:
+                    closing = max(period["close_minutes"] for period in still_open)
+                    hours, minutes = divmod(closing, 60)
+                    today_text, open_today = f"Open today until {hours % 24:02d}:{minutes:02d}", True
+                else:
+                    today_text = "Closed today"
     return {"today_text": today_text, "open_today": open_today, "week": week}
 
 
@@ -650,6 +667,8 @@ def read_back(place_id: str, data: dict) -> dict:
         "photos": photos,
         "address": address if isinstance(address, str) and address else None,
         "opening_hours": read_opening_hours(data),
+        # Only https links: a "javascript:" link would run code when tapped.
+        "google_maps_uri": https_or_none(data.get("googleMapsUri")),
     }
 
 

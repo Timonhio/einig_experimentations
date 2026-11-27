@@ -75,14 +75,10 @@
           {% if hours_text %}<li class="chip {{ 'chip-open' if hours.open_today else 'chip-closed' }}" data-chip="hours">{{ hours_text }}</li>{% endif %}
         </ul>
       {% endif %}
-      {# C2c's one-line facts, kept because a reviewed test (tests/test_cards_vote_result.py) pins
-         them on the rating page; can go once that test may change (U6 spec, "Decisions for Timo"). #}
-      {% set facts = [card.rating_text, card.price_text, card.distance_text] | select | list %}
-      {% if facts %}<p class="place-facts"><small>{{ facts | join(" · ") }}</small></p>{% endif %}
       {% if back.address %}<p class="place-address">{{ back.address }}</p>{% endif %}
       {# The only Google Maps link on the page (A10's one menu link), now as a button. #}
       {% if menu_url %}
-        <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer" class="maps-button">Menu &amp; reviews on Google Maps</a></p>
+        <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer" class="maps-button">Open in Google Maps</a></p>
       {% endif %}
       <small>Google Maps</small>
     </section>
