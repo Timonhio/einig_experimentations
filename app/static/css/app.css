@@ -219,8 +219,7 @@ button[type=submit].option-delete {  /* beats Pico's "button[type=submit] { widt
 [data-swipe-card][data-swipe-choice="no"]::before  { content: "Rather not"; color: #f85149; }
 
 
-/* C10 (F30): turning the rating card with a checkbox and labels, no JavaScript needed.
-   The checkbox is hidden visually but stays focusable, so Tab and Space work. */
+/* Hidden visually but still read by screen readers and reachable with Tab. */
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -231,29 +230,6 @@ button[type=submit].option-delete {  /* beats Pico's "button[type=submit] { widt
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-[data-card-back] { display: none; }
-[data-flip-toggle]:checked ~ [data-swipe-area],
-[data-flip-toggle]:checked ~ [data-flip-open] { display: none; }
-[data-flip-toggle]:checked ~ [data-card-back] {
-  display: flex;         /* C11: pages fill the card, the dots stay at the bottom */
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-[data-flip-open],
-[data-flip-close] {
-  display: block;
-  min-height: 44px;      /* large tap target */
-  padding: 0.6rem 0;
-  cursor: pointer;
-  text-decoration: underline;
-  font-size: 0.875rem;   /* a small hint line, not part of the swipe zone */
-}
-[data-flip-toggle]:focus-visible ~ [data-flip-open],
-[data-flip-toggle]:focus-visible ~ [data-card-back] [data-flip-close] {
-  outline: 3px solid currentColor;
-  outline-offset: 2px;
 }
 .place-kind { margin-bottom: 0.25rem; font-weight: bold; }
 /* B6: the room page. On a phone everything is one column, participants at the top.
@@ -329,29 +305,25 @@ body.rating-screen {
 .card-line details { margin: 0; }
 [data-card-menu] > summary { cursor: pointer; }
 
-/* The back: three pages side by side, CSS scroll snapping; a page scrolls inside itself. */
+/* U6 (D29): the card's three pages. Without JavaScript CSS shows the page the bar link targets
+   (:target), page 1 when none is targeted. Once swipe.js runs it adds .pages-ready and shows the
+   page with .is-current instead. A page never scrolls: a vertical drag means "Fine with me". */
 .card-pages {
-  display: flex;
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  overflow: hidden;
 }
-.card-pages > [data-card-page] {
-  flex: 0 0 100%;
-  scroll-snap-align: start;
-  overflow-y: auto;
+.card-page {
+  display: none;
+  height: 100%;
+  overflow: hidden;
+  flex-direction: column;
 }
-.card-dots { display: flex; justify-content: center; gap: 0.75rem; padding: 0.5rem 0; }
-[data-card-dot] {
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.3;
-  border-bottom: 0;
-}
-[data-card-dot][aria-current="true"] { opacity: 1; }
+.card-pages:not(.pages-ready) > .card-page:first-child,
+.card-pages:not(.pages-ready) > .card-page:target { display: flex; }
+.card-pages:not(.pages-ready):has(> .card-page:target) > .card-page:not(:target) { display: none; }
+.card-pages.pages-ready > .card-page { display: none; }
+.card-pages.pages-ready > .card-page.is-current { display: flex; }
 
 /* The rating buttons and the joker button stay in the page but out of sight: visually hidden,
    still focusable (never display: none), shown while one of them has the keyboard focus.
@@ -848,8 +820,6 @@ details.home-part:not([open]) .back-label { display: none; }
   font-size: 0.8125rem;
 }
 [data-swipe-card] [data-swipe-area] article > p:not(.place-kind) { font-weight: 600; }
-[data-flip-open] { color: var(--einig-button); font-weight: 600; text-decoration: none; text-align: center; }
-[data-flip-close] { color: var(--einig-button); font-weight: 600; text-align: center; }
 
 /* The stamp while dragging: bigger, on white, in the colour of the rating. */
 [data-swipe-card][data-swipe-choice]::before {
@@ -1238,3 +1208,97 @@ a.danger-outline-button:focus-visible { outline: 3px solid var(--einig-accent-2)
 [data-joker-help] .menu-panel { left: 50%; right: auto; transform: translateX(-50%); }
 [data-joker-help] .menu-panel p { color: var(--einig-card-text); margin-bottom: 0.375rem; }
 [data-joker-help] > summary::after { display: none; }
+
+
+/* U6 place card pages */
+/* Looks of the rating card's three pages (specs/u6-place-card-pages.md). */
+
+/* Three short bars at the top show the page; each is a link (large enough to tap). */
+.card-bars { display: flex; gap: 0.375rem; margin-bottom: 0.5rem; }
+[data-card-bar] {
+  flex: 1;
+  height: 1rem;               /* the tap area; the visible bar is the line drawn below */
+  border-bottom: 0;
+  background: linear-gradient(currentColor, currentColor) center / 100% 4px no-repeat;
+  color: var(--einig-card-muted);
+  opacity: 0.35;
+}
+[data-card-bar][aria-current="true"] { opacity: 1; color: var(--einig-button); }
+
+/* Page 1: the map takes about the top half; a calm background when the image is missing. */
+.card-map {
+  flex: 0 0 auto;
+  height: 38dvh;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #E3EAFB;
+}
+.rating-screen [data-swipe-area] .card-map img,
+.card-map img { width: 100%; height: 100%; max-height: none; object-fit: cover; border-radius: 0; display: block; }
+.place-head { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+.rating-screen [data-swipe-area] .place-avatar,
+.place-avatar { width: 56px; height: 56px; max-height: none; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+.place-head h3 { margin: 0; }
+.place-head .place-kind { margin: 0.25rem 0 0; }
+.place-rating { margin: 0.5rem 0 0.25rem; display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.stars {
+  letter-spacing: 0.1em;
+  background: linear-gradient(90deg, #F5A623 var(--stars-fill), #CBD5E1 var(--stars-fill));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.card-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0.25rem 0; padding: 0; list-style: none; }
+.card-chips .chip {
+  list-style: none;
+  margin: 0;
+  padding: 0.15rem 0.65rem;
+  border-radius: 999px;
+  background: #E3EAFB;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.card-chips .chip-open { background: #DCFCE7; color: #166534; }
+.card-chips .chip-closed { background: #FEE2E2; color: #991B1B; }
+.place-facts { margin: 0; color: var(--einig-card-muted); }
+.place-address { margin: 0.25rem 0; font-size: 0.875rem; color: var(--einig-card-muted); }
+.maps-button {
+  display: block;
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  background: var(--einig-button);
+  color: #FFFFFF;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+/* Page 2: one big photo, up to three small ones in a row, then the week's hours. */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem 0.375rem;
+  margin: 0 0 0.5rem;
+}
+.photo-cell { margin: 0; min-width: 0; }
+.photo-cell-big { grid-column: 1 / -1; }
+.photo-cell small { display: block; font-size: 0.6875rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rating-screen [data-swipe-area] .photo-big,
+.photo-big { width: 100%; height: 26dvh; max-height: none; object-fit: cover; }
+.rating-screen [data-swipe-area] .photo-small,
+.photo-small { width: 100%; height: 12dvh; max-height: none; object-fit: cover; border-radius: 12px; }
+.week-hours { margin: 0; padding: 0; font-size: 0.8125rem; line-height: 1.5; }
+.week-hours li { list-style: none; margin: 0; }
+.week-hours .today { font-weight: 700; color: var(--einig-button); }
+
+/* Page 3: each review text is cut to four lines, so the page never scrolls. */
+.card-page blockquote { margin: 0 0 0.5rem; padding: 0.25rem 0 0.25rem 0.75rem; }
+.card-page blockquote p { margin-bottom: 0.25rem; }
+.review-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}

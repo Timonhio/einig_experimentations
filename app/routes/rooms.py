@@ -5,6 +5,7 @@ rating (F4), joker (F10), close the room and show the result (F6), share it (F29
 "Join as ..." in a group room (F16), room setup (F27)."""
 
 import random
+from datetime import datetime, timezone
 
 from flask import (
     Blueprint,
@@ -1260,6 +1261,21 @@ def render_vote_page(room, participant, errors: list[str] | None = None):
     # Only while voting: outside it no card is loaded (and none is shown).
     if next_option in cards and cards[next_option]["source"] == "google":
         menu_url = places.place_page_url(options[next_option]["place_id"], cards[next_option]["name"])
+    # U6: page 1 shows a map image through our own /map/ route (signed token, key stays here),
+    # page 2 the week's opening hours with today marked. No extra Google call for either here.
+    map_url = None
+    hours = None
+    next_card = cards.get(next_option)
+    if next_card is not None and "back" in next_card:
+        if next_card["latitude"] is not None and next_card["longitude"] is not None:
+            token = places.map_token(
+                current_app.config["SECRET_KEY"],
+                options[next_option]["place_id"],
+                next_card["latitude"],
+                next_card["longitude"],
+            )
+            map_url = url_for("pwa.place_map", token=token)
+        hours = places.opening_hours_view(next_card["back"]["opening_hours"], datetime.now(timezone.utc))
 
     # F10: only this participant's own joker (nobody sees who used a joker on what).
     # Its name comes from the cards already loaded; if that option is not shown on this
@@ -1280,6 +1296,8 @@ def render_vote_page(room, participant, errors: list[str] | None = None):
     return render_template(
         "vote.html",
         menu_url=menu_url,
+        map_url=map_url,
+        hours=hours,
         room=room,
         cards=cards,
         order=order,

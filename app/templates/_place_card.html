@@ -28,62 +28,121 @@
 {% endmacro %}
 
 
-{# C10/C11 (F30): the back of the rating card, three pages you swipe sideways (CSS scroll snapping).
-   Everything from Google is escaped by Jinja. Each part only if Google sent it; the author links
-   and the review links follow Google's terms. A page without content says so and keeps its dot. #}
-{% macro place_card_back(card, option_id, menu_url) %}
+{# U6 (D29): the rating card in three pages. 1: where and how good; 2: photos and opening hours;
+   3: reviews. Without JavaScript the bars are links and CSS shows the targeted page (:target);
+   swipe.js turns a tap on the right or left half into the next or previous page.
+   Everything from Google is escaped by Jinja; author links and review links follow Google's terms.
+   `hours` comes from places.opening_hours_view(), `map_url` from our own /map/ route (key stays on the server). #}
+{% macro place_card_pages(card, option_id, menu_url, map_url, hours) %}
   {% set back = card.back %}
-  {% set no_details %}<p>Google has no more details for this place.</p>{% endset %}
-  <div data-card-back>
-    <div class="card-pages">
-      <section data-card-page="about" id="card-page-{{ option_id }}-about">
-        {% if back and back.description %}<p>{{ back.description }}</p>{% endif %}
-        {% if back and back.offers %}<p><small>{{ back.offers }}</small></p>{% endif %}
-        {% if menu_url %}
-          <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer">Menu &amp; reviews on Google Maps</a></p>
+  <nav class="card-bars">
+    {% for title in ["Where", "Photos and hours", "Reviews"] %}
+      <a href="#card-page-{{ option_id }}-{{ loop.index }}" data-card-bar aria-label="Page {{ loop.index }} of 3: {{ title }}"{% if loop.first %} aria-current="true"{% endif %}></a>
+    {% endfor %}
+  </nav>
+  <div class="card-pages" data-card-pages>
+    <section class="card-page" data-card-page="1" id="card-page-{{ option_id }}-1">
+      {# The box keeps a calm background, so a missing map image (503) does not look broken. #}
+      <div class="card-map" data-card-map>
+        {% if map_url %}<img src="{{ map_url }}" alt="Map of {{ card.name }}" width="600" height="300">{% endif %}
+      </div>
+      <div class="place-head">
+        {% if card.photo_name %}
+          <img src="{{ url_for('pwa.photo', photo_name=card.photo_name) }}" alt="Photo of {{ card.name }}" class="place-avatar" width="56" height="56">
         {% endif %}
-      </section>
-      <section data-card-page="photos" id="card-page-{{ option_id }}-photos">
-        {% if back and back.photos %}
+        <div>
+          <h3>{{ card.name }}</h3>
+          {% if card.kind %}<p class="place-kind">{{ card.kind }}</p>{% endif %}
+          {{ photo_author(card.photo_author, card.photo_author_uri) }}
+        </div>
+      </div>
+      {% if card.rating is not none %}
+        <p class="place-rating">
+          <strong>★ {{ "%.1f" | format(card.rating) }}</strong>
+          {# Five stars, filled by CSS up to the rating (4.5 of 5 = 90 %). The number above says it for screen readers. #}
+          <span class="stars" data-stars aria-hidden="true" style="--stars-fill: {{ (card.rating / 5 * 100) | round | int }}%">★★★★★</span>
+          {% if card.rating_count is not none %}
+            <small>{{ "{:,}".format(card.rating_count) }} {{ "review" if card.rating_count == 1 else "reviews" }}</small>
+          {% endif %}
+        </p>
+      {% endif %}
+      {# Only the facts Google sent, so there is never an empty chip. #}
+      {% set hours_text = hours.today_text if hours else none %}
+      {% if card.distance_text or card.price_text or hours_text %}
+        <ul class="card-chips" data-card-chips>
+          {% if card.distance_text %}<li class="chip" data-chip="distance">{{ card.distance_text }}</li>{% endif %}
+          {% if card.price_text %}<li class="chip" data-chip="price">{{ card.price_text }}</li>{% endif %}
+          {% if hours_text %}<li class="chip {{ 'chip-open' if hours.open_today else 'chip-closed' }}" data-chip="hours">{{ hours_text }}</li>{% endif %}
+        </ul>
+      {% endif %}
+      {# C2c's one-line facts, kept because a reviewed test (tests/test_cards_vote_result.py) pins
+         them on the rating page; can go once that test may change (U6 spec, "Decisions for Timo"). #}
+      {% set facts = [card.rating_text, card.price_text, card.distance_text] | select | list %}
+      {% if facts %}<p class="place-facts"><small>{{ facts | join(" · ") }}</small></p>{% endif %}
+      {% if back.address %}<p class="place-address">{{ back.address }}</p>{% endif %}
+      {# The only Google Maps link on the page (A10's one menu link), now as a button. #}
+      {% if menu_url %}
+        <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer" class="maps-button">Menu &amp; reviews on Google Maps</a></p>
+      {% endif %}
+      <small>Google Maps</small>
+    </section>
+
+    <section class="card-page" data-card-page="2" id="card-page-{{ option_id }}-2">
+      {% if card.photo_name %}
+        <div class="photo-grid">
+          <figure class="photo-cell photo-cell-big">
+            <img src="{{ url_for('pwa.photo', photo_name=card.photo_name) }}" alt="Photo of {{ card.name }}" class="photo-big" loading="lazy">
+            {{ photo_author(card.photo_author, card.photo_author_uri) }}
+          </figure>
           {% for extra in back.photos %}
+            <figure class="photo-cell">
+              <img src="{{ url_for('pwa.photo', photo_name=extra.photo_name) }}" alt="Another photo of {{ card.name }}" class="photo-small" loading="lazy">
+              {{ photo_author(extra.photo_author, extra.photo_author_uri) }}
+            </figure>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No photos on Google.</p>
+      {% endif %}
+      {% if hours %}
+        <ul class="week-hours">
+          {% for day in hours.week %}
+            <li data-hours-day{% if day.is_today %} class="today" aria-current="date"{% endif %}>{{ day.text }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No opening hours on Google.</p>
+      {% endif %}
+    </section>
+
+    <section class="card-page" data-card-page="3" id="card-page-{{ option_id }}-3">
+      {% if back.reviews %}
+        <p><small>Reviews selected by Google</small></p>
+        {% for review in back.reviews %}
+          <blockquote>
             <p>
-              <img src="{{ url_for('pwa.photo', photo_name=extra.photo_name) }}" alt="Another photo of {{ card.name }}" loading="lazy">
-              {% if extra.photo_author %}
-                <small>Photo:
-                  {% if extra.photo_author_uri %}<a href="{{ extra.photo_author_uri }}" target="_blank" rel="noopener noreferrer">{{ extra.photo_author }}</a>{% else %}{{ extra.photo_author }}{% endif %}
-                </small>
-              {% endif %}
+              {% if review.author_photo_uri %}<img src="{{ review.author_photo_uri }}" width="32" height="32" alt="" loading="lazy" referrerpolicy="no-referrer">{% endif %}
+              {% if review.author_uri %}<a href="{{ review.author_uri }}" target="_blank" rel="noopener noreferrer">{{ review.author_name }}</a>{% else %}{{ review.author_name }}{% endif %}
+              <small>{{ [review.stars_text, review.age] | select | join(" · ") }}</small>
             </p>
-          {% endfor %}
-        {% else %}
-          {{ no_details }}
-        {% endif %}
-      </section>
-      <section data-card-page="reviews" id="card-page-{{ option_id }}-reviews">
-        {% if back and back.reviews %}
-          <p><small>Reviews selected by Google</small></p>
-          {% for review in back.reviews %}
-            <blockquote>
-              <p>
-                {% if review.author_photo_uri %}<img src="{{ review.author_photo_uri }}" width="32" height="32" alt="" loading="lazy" referrerpolicy="no-referrer">{% endif %}
-                {% if review.author_uri %}<a href="{{ review.author_uri }}" target="_blank" rel="noopener noreferrer">{{ review.author_name }}</a>{% else %}{{ review.author_name }}{% endif %}
-                <small>{{ [review.stars_text, review.age] | select | join(" · ") }}</small>
-              </p>
-              <p>{{ review.text }}</p>
-              {% if review.google_maps_uri %}<p><small><a href="{{ review.google_maps_uri }}" target="_blank" rel="noopener noreferrer">Read on Google Maps</a></small></p>{% endif %}
-            </blockquote>
-          {% endfor %}
-        {% else %}
-          {{ no_details }}
-        {% endif %}
-      </section>
-    </div>
-    {# Without JavaScript the dots are links that change the page; swipe.js marks the current one. #}
-    <nav class="card-dots">
-      {% for name, title in [("about", "About"), ("photos", "Photos"), ("reviews", "Reviews")] %}
-        <a href="#card-page-{{ option_id }}-{{ name }}" data-card-dot aria-label="Page {{ loop.index }} of 3: {{ title }}"{% if loop.first %} aria-current="true"{% endif %}></a>
-      {% endfor %}
-    </nav>
-    <label for="card-side-{{ option_id }}" data-flip-close>Back to the card</label>
+            {# Shown whole (Google terms); CSS cuts it to four lines so the page never scrolls. #}
+            <p class="review-text">{{ review.text }}</p>
+            {% if review.google_maps_uri %}<p><small><a href="{{ review.google_maps_uri }}" target="_blank" rel="noopener noreferrer">Read on Google Maps</a></small></p>{% endif %}
+          </blockquote>
+        {% endfor %}
+      {% else %}
+        <p>No reviews on Google.</p>
+      {% endif %}
+    </section>
   </div>
+{% endmacro %}
+
+
+{# The author line under a photo (Google terms). #}
+{% macro photo_author(name, uri) %}
+  {% if name %}
+    <small>Photo:
+      {% if uri %}<a href="{{ uri }}" target="_blank" rel="noopener noreferrer">{{ name }}</a>{% else %}{{ name }}{% endif %}
+    </small>
+  {% endif %}
 {% endmacro %}

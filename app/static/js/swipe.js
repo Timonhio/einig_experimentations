@@ -1,13 +1,14 @@
-// A10 (D16, D20): swipe the front of the rating card. Right = "Rather yes", up = "Fine with me",
-// left = "Rather not", down = asks whether to use the joker. A tap turns the card; on the back,
-// a tap turns it back and the dots follow the page you scrolled to.
+// A10 (D16, D20, D29): swipe the rating card. Right = "Rather yes", up = "Fine with me",
+// left = "Rather not", down = asks whether to use the joker. This works on every page of the card.
+// U6: a short tap on the right half shows the next page, on the left half the previous one
+// (like stories); the three bars at the top show the page and can be tapped too.
 // This script only presses buttons that are already on the page; the normal forms do the rest.
 // Without this script the page works the same, with the (visually hidden) buttons.
 (function () {
   "use strict";
 
   var SWIPE_DISTANCE = 110;  // pixels the card must be moved before a swipe counts
-  var TAP_DISTANCE = 10;     // a touch that moves less than this is a tap: it turns the card (D19)
+  var TAP_DISTANCE = 10;     // a touch that moves less than this is a tap: it changes the page (D29)
   var FLY_OUT_MS = 200;      // length of the fly-out animation before the button is pressed
 
   var card = document.querySelector("[data-swipe-card]");
@@ -15,10 +16,9 @@
     return;  // not the one-card rating view: nothing to do
   }
   var area = card.querySelector("[data-swipe-area]");
-  var flipToggle = card.querySelector("[data-flip-toggle]");  // only on Google cards with details
-  var back = card.querySelector("[data-card-back]");         // only on Google cards with details
-  var pages = card.querySelector(".card-pages");
-  var dots = card.querySelectorAll("[data-card-dot]");
+  var pageBox = card.querySelector("[data-card-pages]");      // only on Google cards with details
+  var pages = card.querySelectorAll("[data-card-page]");
+  var bars = card.querySelectorAll("[data-card-bar]");
   var question = card.querySelector("[data-joker-question]");  // only while the joker is still free
   var jokerButton = card.querySelector('form[action$="/veto"] button');
   var buttons = {
@@ -37,6 +37,39 @@
   var hint = document.querySelector("[data-swipe-hint]");
   if (hint) {
     hint.hidden = false;
+  }
+
+  // Show page number `index` (0, 1 or 2) and mark its bar. Without this script CSS uses :target.
+  var current = 0;
+  function showPage(index) {
+    if (index < 0 || index >= pages.length) { return; }  // no page before the first or after the last
+    current = index;
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].classList.toggle("is-current", i === index);
+      if (bars[i]) {
+        if (i === index) {
+          bars[i].setAttribute("aria-current", "true");
+        } else {
+          bars[i].removeAttribute("aria-current");
+        }
+      }
+    }
+  }
+  if (pageBox && pages.length) {
+    // Start on the page the address points to (a bar used before the script ran), else page 1.
+    for (var p = 0; p < pages.length; p++) {
+      if (window.location.hash === "#" + pages[p].id) { current = p; }
+    }
+    pageBox.classList.add("pages-ready");  // from now on CSS shows .is-current, not :target
+    showPage(current);
+    for (var b = 0; b < bars.length; b++) {
+      bars[b].addEventListener("click", (function (index) {
+        return function (event) {
+          event.preventDefault();  // change the page without jumping to the anchor
+          showPage(index);
+        };
+      })(b));
+    }
   }
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -103,9 +136,15 @@
       question.hidden = false;
       return;
     }
-    if (!choice && flipToggle && Math.abs(dx) < TAP_DISTANCE && Math.abs(dy) < TAP_DISTANCE) {
+    if (!choice && pages.length && Math.abs(dx) < TAP_DISTANCE && Math.abs(dy) < TAP_DISTANCE) {
       springBack();
-      flipToggle.click();  // a short tap turns the card; nothing is rated
+      // A short tap changes the page; nothing is rated. Right half: next, left half: previous.
+      var box = area.getBoundingClientRect();
+      if (event.clientX >= box.left + box.width / 2) {
+        showPage(current + 1);
+      } else {
+        showPage(current - 1);
+      }
       return;
     }
     if (!choice) {
@@ -137,38 +176,6 @@
     });
     question.querySelector("[data-joker-cancel]").addEventListener("click", function () {
       question.hidden = true;
-    });
-  }
-
-  // The back has no rating gestures. A short tap on a free spot turns the card back to the front;
-  // links, dots and buttons keep their own behaviour, and a drag (page change, scrolling) is no tap.
-  if (back && flipToggle) {
-    var backStart = null;
-    back.addEventListener("pointerdown", function (event) {
-      backStart = { x: event.clientX, y: event.clientY };
-    });
-    back.addEventListener("pointerup", function (event) {
-      if (backStart === null) { return; }
-      var moved = Math.abs(event.clientX - backStart.x) >= TAP_DISTANCE ||
-                  Math.abs(event.clientY - backStart.y) >= TAP_DISTANCE;
-      backStart = null;
-      if (moved || event.target.closest("a, button, label, [data-card-dot]")) { return; }
-      flipToggle.click();
-    });
-    back.addEventListener("pointercancel", function () { backStart = null; });
-  }
-
-  // Mark the dot of the page that is in view (without this script the first dot stays marked).
-  if (pages && dots.length) {
-    pages.addEventListener("scroll", function () {
-      var current = Math.round(pages.scrollLeft / pages.clientWidth);
-      for (var i = 0; i < dots.length; i++) {
-        if (i === current) {
-          dots[i].setAttribute("aria-current", "true");
-        } else {
-          dots[i].removeAttribute("aria-current");
-        }
-      }
     });
   }
 
