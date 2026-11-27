@@ -324,6 +324,12 @@ body.rating-screen {
 .card-pages:not(.pages-ready):has(> .card-page:target) > .card-page:not(:target) { display: none; }
 .card-pages.pages-ready > .card-page { display: none; }
 .card-pages.pages-ready > .card-page.is-current { display: flex; }
+/* The swipe area of a card with pages is a column, so the pages get exactly the height left under
+   the bars. Without this they grow with their content: the bottom of page 1 (address, Google Maps
+   button) is cut off on small phones, and a bar link scrolls the bars out of sight. */
+.rating-screen [data-swipe-area]:has(> [data-card-pages]) { display: flex; flex-direction: column; }
+.card-pages { display: flex; flex-direction: column; }
+.card-pages > .card-page { flex: 1; min-height: 0; }
 
 /* The rating buttons and the joker button stay in the page but out of sight: visually hidden,
    still focusable (never display: none), shown while one of them has the keyboard focus.
@@ -1225,10 +1231,12 @@ a.danger-outline-button:focus-visible { outline: 3px solid var(--einig-accent-2)
 }
 [data-card-bar][aria-current="true"] { opacity: 1; color: var(--einig-button); }
 
-/* Page 1: the map takes about the top half; a calm background when the image is missing. */
+/* Page 1: the map takes about the top half; a calm background when the image is missing.
+   On a short screen only the map gets smaller, so the address and the button always fit. */
 .card-map {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   height: 38dvh;
+  min-height: 5rem;
   border-radius: 20px;
   overflow: hidden;
   background: #E3EAFB;
@@ -1288,6 +1296,13 @@ a.danger-outline-button:focus-visible { outline: 3px solid var(--einig-accent-2)
 .photo-big { width: 100%; height: 26dvh; max-height: none; object-fit: cover; }
 .rating-screen [data-swipe-area] .photo-small,
 .photo-small { width: 100%; height: 12dvh; max-height: none; object-fit: cover; border-radius: 12px; }
+/* On a short screen the photos get smaller, so all seven days of the week (and today) stay in sight. */
+@media (max-height: 699px) {
+  .rating-screen [data-swipe-area] .photo-big,
+  .photo-big { height: 16dvh; }
+  .rating-screen [data-swipe-area] .photo-small,
+  .photo-small { height: 8dvh; }
+}
 .week-hours { margin: 0; padding: 0; font-size: 0.8125rem; line-height: 1.5; }
 .week-hours li { list-style: none; margin: 0; }
 .week-hours .today { font-weight: 700; color: var(--einig-button); }
@@ -1295,6 +1310,10 @@ a.danger-outline-button:focus-visible { outline: 3px solid var(--einig-accent-2)
 /* Page 3: each review text is cut to four lines, so the page never scrolls. */
 .card-page blockquote { margin: 0 0 0.5rem; padding: 0.25rem 0 0.25rem 0.75rem; }
 .card-page blockquote p { margin-bottom: 0.25rem; }
+/* The author picture stays small: the general rule for pictures in the swipe area (full width)
+   must not apply, now that the reviews sit inside it. */
+.rating-screen [data-swipe-area] .card-page blockquote img,
+.card-page blockquote img { width: 32px; height: 32px; max-height: none; border-radius: 50%; vertical-align: middle; }
 .review-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
