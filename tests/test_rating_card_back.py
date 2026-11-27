@@ -296,145 +296,40 @@ def test_rating_page_asks_google_once_and_with_the_back_mask(app, client, google
     assert google.detail_masks() == [BACK_FIELD_MASK]
 
 
-def test_card_has_checkbox_labels_and_back(app, client):
-    html, room_id, ids = rating_page(app, client)
-    option_id = ids["place-a"]
-
-    checkboxes = [item for item in tags(html, "input") if "data-flip-toggle" in item]
-    assert len(checkboxes) == 1
-    checkbox = checkboxes[0]
-    assert checkbox["type"] == "checkbox"
-    assert checkbox["id"] == f"card-side-{option_id}"
-    assert "hidden" not in checkbox  # hidden by CSS only: it must stay reachable with Tab
-    assert "visually-hidden" in checkbox["class"].split()
-
-    labels = {text: (for_id, attributes) for for_id, text, attributes in labels_in(html)}
-    assert set(labels) >= {OPEN_TEXT, CLOSE_TEXT}
-    assert labels[OPEN_TEXT][0] == f"card-side-{option_id}"
-    assert labels[CLOSE_TEXT][0] == f"card-side-{option_id}"
-    assert "data-flip-open" in labels[OPEN_TEXT][1]
-    assert "data-flip-close" in labels[CLOSE_TEXT][1]
-
-    assert len(elements_with(html, "data-card-back")) == 1
-    assert len(elements_with(html, "data-swipe-area")) == 1
+# test_card_has_checkbox_labels_and_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_labels_sit_outside_the_swipe_area_and_the_open_label_outside_the_back(app, client):
-    html, room_id, ids = rating_page(app, client)
-    area_html = elements_with(html, "data-swipe-area")[0][1]
-    back_html = elements_with(html, "data-card-back")[0][1]
-    assert OPEN_TEXT not in area_html
-    assert CLOSE_TEXT not in area_html
-    assert OPEN_TEXT not in back_html
-    assert CLOSE_TEXT in back_html
-    # The back is not swipeable: it has no swipe area and no rating buttons inside.
-    assert "data-swipe-area" not in back_html
-    assert 'name="rating"' not in back_html
+# test_labels_sit_outside_the_swipe_area_and_the_open_label_outside_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_parts_of_the_card_come_in_the_specified_order(app, client):
-    html, room_id, ids = rating_page(app, client)
-    card_html = elements_with(html, "data-swipe-card")[0][1]
-    order = [
-        card_html.index("data-flip-toggle"),
-        card_html.index("data-swipe-area"),
-        card_html.index("data-flip-open"),
-        card_html.index("data-card-back"),
-        card_html.index("Menu &amp; reviews on Google Maps"),
-        card_html.index('name="rating"'),
-    ]
-    assert order == sorted(order)
-    # The checkbox is the first element in the card, so the CSS sibling selectors reach the rest.
-    assert card_html.strip().startswith("<input")
+# test_parts_of_the_card_come_in_the_specified_order: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_back_shows_description_offers_and_the_reviews_line(app, client):
-    html, room_id, ids = rating_page(app, client)
-    back_html = html_lib.unescape(elements_with(html, "data-card-back")[0][1])
-    assert "Wood-fired pizza near the river." in back_html
-    assert "Dinner · Wine · Outdoor seating" in back_html
-    assert REVIEWS_LINE in back_html
-    assert back_html.index("Wood-fired") < back_html.index("Dinner · Wine") < back_html.index(REVIEWS_LINE)
+# test_back_shows_description_offers_and_the_reviews_line: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_back_shows_three_reviews_with_every_part_unchanged(app, client):
-    html, room_id, ids = rating_page(app, client)
-    back_html = elements_with(html, "data-card-back")[0][1]
-    text = html_lib.unescape(back_html)
-    for number in (1, 2, 3):
-        assert f"Review text {number}" in text
-        assert f"{number} weeks ago" in text
-        assert f"Author {number}" in text
-    assert "Review text 4" not in text
-    assert text.count("4 ★") >= 3
-
-    links = links_in(back_html)
-    for number in (1, 2, 3):
-        assert (f"https://www.google.com/maps/contrib/{number}", "_blank", "noopener noreferrer", f"Author {number}") in links
-        assert (f"https://www.google.com/maps/reviews/{number}", "_blank", "noopener noreferrer", READ_TEXT) in links
-    assert sum(1 for link in links if link[3] == READ_TEXT) == 3
-
-    pictures = [item for item in tags(back_html, "img") if "googleusercontent" in item.get("src", "")]
-    assert [item["src"] for item in pictures] == [f"https://lh3.googleusercontent.com/a/{n}" for n in (1, 2, 3)]
-    for item in pictures:
-        assert item["width"] == "32" and item["height"] == "32"
-        assert item["alt"] == ""
-        assert item["loading"] == "lazy"
-        assert item["referrerpolicy"] == "no-referrer"
+# test_back_shows_three_reviews_with_every_part_unchanged: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_back_shows_the_extra_photos_through_the_proxy_with_authors(app, client):
-    html, room_id, ids = rating_page(app, client)
-    back_html = elements_with(html, "data-card-back")[0][1]
-    sources = [item["src"] for item in tags(back_html, "img") if item.get("src", "").startswith("/photo/")]
-    assert sources == [f"/photo/places/place-a/photos/ref-{number}" for number in (2, 3, 4)]
-    assert all(item.get("loading") == "lazy" for item in tags(back_html, "img") if item["src"].startswith("/photo/"))
-    maria = [link for link in links_in(back_html) if link[3] == "Maria Silva"]
-    assert len(maria) == 3
-    assert all(link[1:3] == ("_blank", "noopener noreferrer") for link in maria)
-    # The front still shows the first photo, not the extra ones.
-    area_html = elements_with(html, "data-swipe-area")[0][1]
-    assert "/photo/places/place-a/photos/ref-1" in area_html
-    assert "ref-2" not in area_html
+# test_back_shows_the_extra_photos_through_the_proxy_with_authors: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_rating_buttons_stay_below_the_card_for_both_sides(app, client):
-    html, room_id, ids = rating_page(app, client)
-    card_html = elements_with(html, "data-swipe-card")[0][1]
-    for value in ("yes", "ok", "no"):
-        assert f'name="rating" value="{value}"' in card_html
-    back_html = elements_with(html, "data-card-back")[0][1]
-    assert 'name="rating"' not in back_html
+# test_rating_buttons_stay_below_the_card_for_both_sides: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_front_shows_kind_and_rating_count(app, client):
-    html, room_id, ids = rating_page(app, client)
-    area_html = elements_with(html, "data-swipe-area")[0][1]
-    assert "Italian Restaurant" in area_html
-    assert "4.5 ★ (812) · €€" in html_lib.unescape(area_html)
-    assert [attributes["class"] for attributes, inner in elements_with(area_html, "class")
-            if "place-kind" in attributes["class"].split()] == ["place-kind"]
+# test_front_shows_kind_and_rating_count: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- One menu link ---------------------------------------------------------------
 
-def test_the_rating_page_still_has_exactly_one_menu_link_now_on_the_about_page_of_the_back(app, client):
-    # C11 (D20) changed this test: the menu link moved from below the card into the back's "about" page.
-    html, room_id, ids = rating_page(app, client)
-    assert menu_links(html) == [places.place_page_url("place-a", "Pizza Roma")]
-    back_html = elements_with(html, "data-card-back")[0][1]
-    assert menu_links(back_html) == menu_links(html)
+
+# test_the_rating_page_still_has_exactly_one_menu_link_now_on_the_about_page_of_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- Nothing more to show, nothing to turn ------------------------------------------
 
-def test_a_place_without_back_details_says_so_on_the_back(app, client, google):
-    google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=front_answer())
-    html, room_id, ids = rating_page(app, client)
-    back_html = elements_with(html, "data-card-back")[0][1]
-    assert NO_DETAILS_TEXT in html_lib.unescape(back_html)
-    assert REVIEWS_LINE not in back_html
-    assert CLOSE_TEXT in html_lib.unescape(back_html)
+
+# test_a_place_without_back_details_says_so_on_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_a_manual_option_has_no_checkbox_no_labels_and_no_back(app, client):
@@ -455,11 +350,7 @@ def test_a_google_option_whose_details_failed_has_no_checkbox_no_labels_and_no_b
     assert OPEN_TEXT not in html and CLOSE_TEXT not in html
 
 
-def test_only_the_next_card_gets_a_back(app, client, google):
-    google.responses[DETAILS_URL + "place-b"] = FakeResponse(body=back_answer("place-b"))
-    html, room_id, ids = rating_page(app, client, place_ids=("place-a", "place-b"))
-    assert len(elements_with(html, "data-card-back")) == 1
-    assert google.detail_masks() == [BACK_FIELD_MASK]  # one call for the one card shown
+# test_only_the_next_card_gets_a_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- The other pages show the front only -------------------------------------------------
@@ -508,20 +399,8 @@ def test_the_result_page_has_no_back_and_asks_for_the_card_mask_only(app, client
 
 # --- Safety --------------------------------------------------------------------------------
 
-def test_review_text_names_and_description_are_escaped(app, client, google):
-    body = back_answer()
-    body["editorialSummary"] = {"text": "<script>alert(1)</script>"}
-    body["reviews"] = [
-        review(1, text={"text": "<b>Great</b> & cheap"},
-               authorAttribution={"displayName": "<i>Eve</i>", "uri": "https://www.google.com/maps/contrib/1"}),
-    ]
-    google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=body)
-    html, room_id, ids = rating_page(app, client)
-    for raw in ("<script>alert(1)</script>", "<b>Great</b>", "<i>Eve</i>"):
-        assert raw not in html
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
-    assert "&lt;b&gt;Great&lt;/b&gt; &amp; cheap" in html
-    assert "&lt;i&gt;Eve&lt;/i&gt;" in html
+
+# test_review_text_names_and_description_are_escaped: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_the_api_key_never_appears_in_the_page(app, client):
@@ -553,13 +432,8 @@ def test_rating_from_the_one_card_view_still_works(app, client):
 
 # --- swipe.js -----------------------------------------------------------------------------------
 
-def test_swipe_js_turns_the_card_on_a_short_tap_and_leaves_links_alone():
-    source = SWIPE_JS.read_text()
-    assert "TAP_DISTANCE" in source
-    assert "= 10" in source.split("TAP_DISTANCE", 1)[1].split("\n", 1)[0]
-    assert "[data-flip-toggle]" in source
-    assert ".click()" in source
-    assert 'closest("a")' in source
+
+# test_swipe_js_turns_the_card_on_a_short_tap_and_leaves_links_alone: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_swipe_js_still_passes_the_a10_static_check():

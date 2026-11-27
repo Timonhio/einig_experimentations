@@ -43,7 +43,7 @@ Read before working:
   - `app/static/js/geolocation.js` – asks for the browser location and puts rounded coordinates into a hidden form field
   - `app/static/sw.js` – minimal service worker for PWA installability (no offline caching of dynamic pages)
   - `app/static/js/register-sw.js` – registers the service worker
-  - `app/static/js/swipe.js` – lets a participant swipe the rating card; it only presses the rating button that is already on the page (D16), and turns the card over on a short tap by clicking the card's flip checkbox (D19); a touch that starts on a link is left alone
+  - `app/static/js/swipe.js` – lets a participant swipe the rating card on every page; it only presses the rating button that is already on the page (D16). A short tap on the right half of the card shows the next page, on the left half the previous one (D29); a touch that starts on a link is left alone
   - `app/static/js/invite.js` – the Invite button: after a tap it calls the browser's share menu (`navigator.share`) with the invite link (D28); without it the page shows plain links
   Keep each file short and commented. All other behaviour uses HTML forms and server-side Python.
 - **Live updates use meta refresh**, not JavaScript: waiting and lobby pages include `<meta http-equiv="refresh" content="4">`. Exception (D25): the creator's lobby while the room is collecting reloads on request (Refresh button), so the time limit they pick is not reset.
@@ -88,7 +88,7 @@ app/
   routes/
     main.py            # home page and /health check
     rooms.py           # create, join, options, voting, veto, close, result
-    pwa.py             # manifest, service worker, place photo proxy
+    pwa.py             # manifest, service worker, place photo proxy, map image of the rating card
   services/
     scoring.py         # winner algorithm – pure functions only
     places.py          # Google Places API calls
@@ -172,13 +172,13 @@ With hidden collecting (F28, D17), no page shows another participant's options b
 ## Google Maps integration (`services/places.py`)
 
 - Use the **Places API (New)**: `POST https://places.googleapis.com/v1/places:searchNearby` with headers `X-Goog-Api-Key` and `X-Goog-FieldMask`.
-  The map of collected places (F26, D15) uses the **Maps Static API** (`GET https://maps.googleapis.com/maps/api/staticmap`) on the server, with locations loaded by Place Details (field mask `location`). F26 is parked (D15), so this and the `/map/...` route below are not built.
+  The **Maps Static API** (`GET https://maps.googleapis.com/maps/api/staticmap`) draws the map image on page 1 of the rating card (U6, D29): one call per image on the server, through `/map/<token>` (place id and location signed with `SECRET_KEY`, only for a browser in a room with that place), cached like photos. The map of collected places (F26, D15) would use it too; F26 is parked (D15) and not built.
   Finding a place by name (F23, D14) uses `POST https://places.googleapis.com/v1/places:searchText` with the same headers and a field mask.
 - **Always send a field mask** with only the fields the UI displays. Never use `*`.
 - **One search per room**, not per participant. Surprise mode may run a few small searches with different place types and mix the results. Exception: finding a place by name (F23, D14) is one Text Search per search a participant sends, with at most 5 results. Exception (F26, D15, not built): the "My places" cards and the place maps would load details per person and per group, with at most 25 pins per map.
-- **Reviews and "serves" fields** (F30, D19) are loaded only for the one card on the rating page, in its single details call. Each review is shown unchanged with its author's name, photo and profile link and a link to the review on Google Maps.
+- **Reviews, opening hours and the short address** (F30, D19, D29) are loaded only for the one card on the rating page, in its single details call (`BACK_FIELD_MASK` = `CARD_FIELD_MASK` + `reviews,currentOpeningHours,shortFormattedAddress,googleMapsUri,utcOffsetMinutes`; description and "serves" fields are no longer asked for). The card has one Google Maps link, *Open in Google Maps* (`googleMapsUri`, else the search URL from the place id). Each review is shown unchanged with its author's name, photo and profile link and a link to the review on Google Maps (CSS cuts its text to four lines).
 - **Store only `place_id`** permanently. Name, photo, rating etc. are fetched when needed and not written to the database.
-- **Photos go through a backend proxy route** (`/photo/<photo_name>`) so the API key never appears in HTML. Exception: review author pictures (F30, D19) are loaded straight from Google, because their URLs carry no key. **Maps of collected places** go through `/map/...` the same way.
+- **Photos go through a backend proxy route** (`/photo/<photo_name>`) so the API key never appears in HTML. Exception: review author pictures (F30, D19) are loaded straight from Google, because their URLs carry no key. **The map image of the rating card** goes through `/map/<token>` the same way (D29).
 - **Map of the winner and maps of the search matches (E2):** Maps Embed API in an `<iframe>`, using the separate, browser-restricted key `GOOGLE_MAPS_EMBED_KEY`. The matches of the search by name each get a small embed while the room is collecting. Route link: a normal Google Maps URL, no API call.
 - All API calls have a **timeout (5 s)**. On any error, show a friendly message; for 10 minutes the group can add options as text (D23).
 - **Tests never call Google.** Mock all HTTP calls.
@@ -201,7 +201,7 @@ With hidden collecting (F28, D17), no page shows another participant's options b
 ## Mobile and PWA
 
 - Design for a phone screen first (about 380 px wide). Large tap targets, one option card per screen, no horizontal scrolling.
-- Rating uses three large buttons. On the one-card-at-a-time rating page the card can also be swiped (right = "Rather yes", up = "Fine with me", left = "Rather not", D16); the buttons always stay and work without JavaScript.
+- Rating uses three large buttons. On the one-card-at-a-time rating page the card can also be swiped (right = "Rather yes", up = "Fine with me", left = "Rather not", D16); the buttons always stay and work without JavaScript. The card has three pages (where, photos and hours, reviews; D29); a tap on the right or left half changes the page, and without JavaScript the bars at the top are links.
 - `base.html` includes the viewport meta tag, the manifest link, and the service-worker registration script.
 - Geolocation and PWA installation only work over HTTPS; test them on the deployed app.
 
@@ -228,4 +228,5 @@ Update this section as the project progresses.
 - [x] Sprint 5 – Coming back (D15): F25 my rooms, F16 groups (F26 place collection and map not built)
 - [x] Sprint 6 – Making it reliable (D17–D25): room setup F27, hidden collecting F28, share result F29, place details F30, remove/delete rooms F31/F32, places only via Google Maps with typed fallback (E1–E7), pip-audit check (D24)
 - [x] Sprint 7 – Easier to use (D26–D28): U1 one next step at a time, U2 choose what first, U5 joker explanation, U3 invite in one tap and groups first
+- [x] U6 place card in three pages (D29)
 - [ ] Parked: F14, F15, F17–F21, only if time remains

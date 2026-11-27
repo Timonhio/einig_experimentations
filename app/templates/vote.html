@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_place_card.html" import place_card, place_card_back %}
+{% from "_place_card.html" import place_card, place_card_pages %}
 
 {% block title %}Rate: {{ room.title }} – Einig{% endblock %}
 
@@ -102,20 +102,21 @@
     {# A10: swipe.js removes "hidden", so the hint only shows where swiping works. #}
     <p hidden data-swipe-hint>Swipe right: Rather yes · up: Fine with me · left: Rather not</p>
     {% set next_card = cards[next_option] %}
-    {# C10: a Google card with details can be turned over (checkbox + labels, no JavaScript needed). #}
-    {% set has_back = next_card.source == "google" and not next_card.details_missing %}
+    {# U6 (D29): a Google card with details has three pages (no flip). A manual option and a card
+       whose details failed are shown as before. #}
+    {% set has_pages = next_card.source == "google" and next_card.back is defined %}
     <article data-swipe-card>
-      {% if has_back %}<input type="checkbox" id="card-side-{{ next_option }}" data-flip-toggle class="visually-hidden">{% endif %}
-      {# Only the front can be dragged to rate; the back has pages instead (D20). #}
+      {# The whole card can be dragged to rate, on every page; a short tap changes the page. #}
       <div data-swipe-area>
-        {{ option_heading(next_option) }}
+        {% if has_pages %}
+          {{ place_card_pages(next_card, next_option, menu_url, map_url, hours) }}
+        {% else %}
+          {{ option_heading(next_option) }}
+        {% endif %}
       </div>
-      {% if has_back %}
-        {# Outside the swipe area: swipe.js captures the pointer inside it, so a label there would not get the tap. #}
-        <label for="card-side-{{ next_option }}" data-flip-open>More about this place</label>
-        {{ place_card_back(next_card, next_option, menu_url) }}
-      {% elif menu_url %}
-        <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer">Menu &amp; reviews on Google Maps</a></p>
+      {% if menu_url and not has_pages %}
+        {# A card whose details failed keeps the one Google Maps link (search by place id). #}
+        <p><a href="{{ menu_url }}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a></p>
       {% endif %}
       {# The buttons stay in the page, visually hidden but focusable (app.css). #}
       {{ rating_form(next_option) }}

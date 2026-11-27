@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
+# Part of Flask already (no new dependency): signs the map token with SECRET_KEY (U6, D29).
+from itsdangerous import BadSignature, URLSafeSerializer
 
 NEARBY_SEARCH_URL = "https://places.googleapis.com/v1/places:searchNearby"
 
@@ -345,31 +347,14 @@ PLACE_DETAILS_URL = "https://places.googleapis.com/v1/places/"
 DETAILS_FIELD_MASK = "displayName,rating,priceLevel,location,photos"
 # C10 (F30): every card also asks for the kind of place and the number of ratings.
 CARD_FIELD_MASK = DETAILS_FIELD_MASK + ",userRatingCount,primaryTypeDisplayName"
-# Only the one card on the rating page asks for the back: description, offers and reviews.
+# U6 (D29): only the one card on the rating page asks for its pages: reviews, the opening
+# hours, the short address, the place's Google Maps link and its time zone offset (to know
+# which day is "today" there). Description and "serves" fields were dropped with the flip.
 BACK_FIELD_MASK = (
-    CARD_FIELD_MASK
-    + ",editorialSummary,reviews,servesBreakfast,servesBrunch,servesLunch,servesDinner"
-    + ",servesVegetarianFood,servesCoffee,servesDessert,servesBeer,servesWine,servesCocktails"
-    + ",goodForGroups,outdoorSeating,reservable"
+    CARD_FIELD_MASK + ",reviews,currentOpeningHours,shortFormattedAddress,googleMapsUri,utcOffsetMinutes"
 )
 MAX_REVIEWS_SHOWN = 3
 MAX_EXTRA_PHOTOS = 3
-# Google field -> short label, in the fixed order the back shows them.
-OFFER_LABELS = {
-    "servesBreakfast": "Breakfast",
-    "servesBrunch": "Brunch",
-    "servesLunch": "Lunch",
-    "servesDinner": "Dinner",
-    "servesVegetarianFood": "Vegetarian",
-    "servesCoffee": "Coffee",
-    "servesDessert": "Dessert",
-    "servesBeer": "Beer",
-    "servesWine": "Wine",
-    "servesCocktails": "Cocktails",
-    "goodForGroups": "Good for groups",
-    "outdoorSeating": "Outdoor seating",
-    "reservable": "Reservations",
-}
 PHOTO_MEDIA_URL = "https://places.googleapis.com/v1/{photo_name}/media"
 PHOTO_MAX_WIDTH_PX = 400
 FALLBACK_PLACE_NAME = "Place from Google Maps"
@@ -426,7 +411,8 @@ def get_place_details(api_key: str, place_id: str, field_mask: str = DETAILS_FIE
 def read_details(place_id: str, data: dict, with_back: bool = False) -> dict:
     """Pick the card fields out of Google's answer. Anything missing or unusable becomes None.
 
-    The keys kind, rating_count and back (C10) are added only when Google sent a valid value.
+    The keys kind and rating_count (C10) are added only when Google sent a valid value;
+    back only with the back mask (U6).
     """
     details = {
         "name": None,
@@ -482,10 +468,116 @@ def read_details(place_id: str, data: dict, with_back: bool = False) -> dict:
         details["rating_count"] = count
 
     if with_back:
-        back = read_back(place_id, data)
-        if any(back.values()):
-            details["back"] = back
+        # U6: always there with the back mask (parts may be empty), so the rating card
+        # always gets its three pages; a page without content says so.
+        details["back"] = read_back(place_id, data)
     return details
+
+
+def read_opening_hours(data: dict) -> dict | None:
+    """U6: the week's opening hours as the card shows them, or None if Google sent nothing usable.
+
+    Each period is {"open_day", "open_minutes", "close_day", "close_minutes"}; Google counts
+    days from 0 = Sunday. A period without "close" means open around the clock.
+    """
+    hours = data.get("currentOpeningHours")
+    if not isinstance(hours, dict):
+        return None
+    lines = hours.get("weekdayDescriptions")
+    if not (isinstance(lines, list) and len(lines) == 7 and all(isinstance(line, str) and line for line in lines)):
+        return None
+
+    periods = None
+    raw_periods = hours.get("periods")
+    if isinstance(raw_periods, list):
+        periods = []
+        for raw in raw_periods:
+            period = read_period(raw)
+            if period is not None:
+                periods.append(period)
+
+    offset = data.get("utcOffsetMinutes")
+    if not (isinstance(offset, int) and not isinstance(offset, bool) and -14 * 60 <= offset <= 14 * 60):
+        offset = None
+    return {"weekday_descriptions": list(lines), "periods": periods, "utc_offset_minutes": offset}
+
+
+def read_point(point: object) -> tuple[int, int] | None:
+    """(day, minutes after midnight) of one opening or closing point, or None if it is unusable."""
+    if not isinstance(point, dict):
+        return None
+    day, hour, minute = point.get("day"), point.get("hour", 0), point.get("minute", 0)
+    for value in (day, hour, minute):
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+    if not (0 <= day <= 6 and 0 <= hour <= 24 and 0 <= minute <= 59):
+        return None
+    return day, hour * 60 + minute
+
+
+def read_period(raw: object) -> dict | None:
+    """One opening period, or None if its opening point is unusable."""
+    if not isinstance(raw, dict):
+        return None
+    opening = read_point(raw.get("open"))
+    if opening is None:
+        return None
+    closing = read_point(raw.get("close"))
+    return {
+        "open_day": opening[0],
+        "open_minutes": opening[1],
+        "close_day": closing[0] if closing else None,
+        "close_minutes": closing[1] if closing else None,
+    }
+
+
+def opening_hours_view(opening_hours: dict | None, now: datetime) -> dict | None:
+    """U6: today's chip text and the week list with today marked, or None without opening hours.
+
+    "Today" is the day at the place (Google's UTC offset), or the UTC day without an offset.
+    today_text is None when Google sent the week's lines but no usable periods. A period that
+    opened yesterday and has not closed yet keeps today "open" (a bar at 01:00).
+    """
+    if opening_hours is None:
+        return None
+    local = now + timedelta(minutes=opening_hours.get("utc_offset_minutes") or 0)
+    # Google's week list starts on Monday, like Python's weekday(); its periods count 0 = Sunday.
+    today_index = local.weekday()
+    google_today = (today_index + 1) % 7
+    google_yesterday = (google_today - 1) % 7
+    minutes_now = local.hour * 60 + local.minute
+    week = [
+        {"text": line, "is_today": index == today_index}
+        for index, line in enumerate(opening_hours["weekday_descriptions"])
+    ]
+
+    today_text, open_today = None, False
+    periods = opening_hours.get("periods")
+    if periods is not None:
+        if any(period["close_day"] is None for period in periods):
+            today_text, open_today = "Open 24 hours", True
+        else:
+            today = [period for period in periods if period["open_day"] == google_today]
+            if today:
+                # The last period of the day decides "until when" (lunch and dinner: dinner).
+                last = max(today, key=lambda period: period["open_minutes"])
+                hours, minutes = divmod(last["close_minutes"], 60)
+                today_text, open_today = f"Open today until {hours % 24:02d}:{minutes:02d}", True
+            else:
+                # No period opens today, but last night's may still run (e.g. until 02:00).
+                still_open = [
+                    period for period in periods
+                    if period["open_day"] == google_yesterday
+                    and period["close_day"] == google_today
+                    and period["close_minutes"] > minutes_now
+                ]
+                if still_open:
+                    closing = max(period["close_minutes"] for period in still_open)
+                    hours, minutes = divmod(closing, 60)
+                    today_text, open_today = f"Open today until {hours % 24:02d}:{minutes:02d}", True
+                else:
+                    today_text = "Closed today"
+    return {"today_text": today_text, "open_today": open_today, "week": week}
 
 
 def https_or_none(value) -> str | None:
@@ -547,9 +639,7 @@ def read_extra_photo(place_id: str, photo) -> dict | None:
 
 
 def read_back(place_id: str, data: dict) -> dict:
-    """The parts of the back of the card. Every part that is missing or unusable is empty."""
-    offers = [label for field, label in OFFER_LABELS.items() if data.get(field) is True]
-
+    """The parts of the card's pages 2 and 3 and the address (U6). Missing or unusable parts are empty."""
     reviews = []
     raw_reviews = data.get("reviews")
     if isinstance(raw_reviews, list):
@@ -571,11 +661,14 @@ def read_back(place_id: str, data: dict) -> dict:
             if len(photos) == MAX_EXTRA_PHOTOS:
                 break
 
+    address = data.get("shortFormattedAddress")
     return {
-        "description": text_or_none(data, "editorialSummary"),
-        "offers": " · ".join(offers) or None,
         "reviews": reviews,
         "photos": photos,
+        "address": address if isinstance(address, str) and address else None,
+        "opening_hours": read_opening_hours(data),
+        # Only https links: a "javascript:" link would run code when tapped.
+        "google_maps_uri": https_or_none(data.get("googleMapsUri")),
     }
 
 
@@ -689,6 +782,12 @@ def build_card(option, details: dict | None, centre_latitude: float | None, cent
     for key in ("kind", "back"):
         if key in details:
             card[key] = details[key]
+    if "back" in details:
+        # U6: page 1 of the rating card shows the stars, the count and a map at the place.
+        card["rating"] = details["rating"]
+        card["rating_count"] = details.get("rating_count")
+        card["latitude"] = details["latitude"]
+        card["longitude"] = details["longitude"]
     return card
 
 
@@ -722,6 +821,65 @@ def load_cards(
                 pass  # Only this place failed; the next one is still loaded.
         cards.append(build_card(option, details, centre_latitude, centre_longitude))
     return cards
+
+
+# --- U6: the map image on the rating card (D29) ---------------------------------
+
+STATIC_MAP_URL = "https://maps.googleapis.com/maps/api/staticmap"
+STATIC_MAP_ZOOM = 16
+# Separates map tokens from anything else signed with SECRET_KEY (e.g. the session cookie).
+MAP_TOKEN_SALT = "place-map"
+
+
+def map_token(secret_key: str, place_id: str, latitude: float, longitude: float) -> str:
+    """Sign place id and location, so /map/<token> only draws places our own pages asked for."""
+    return URLSafeSerializer(secret_key, salt=MAP_TOKEN_SALT).dumps([place_id, latitude, longitude])
+
+
+def read_map_token(secret_key: str, token: str) -> tuple[str, float, float] | None:
+    """(place id, latitude, longitude) from a token, or None if it is wrong, changed or unusable."""
+    try:
+        content = URLSafeSerializer(secret_key, salt=MAP_TOKEN_SALT).loads(token)
+    except BadSignature:
+        return None
+    if not isinstance(content, list) or len(content) != 3:
+        return None
+    place_id, latitude, longitude = content
+    if not isinstance(place_id, str) or not PLACE_ID_PATTERN.fullmatch(place_id):
+        return None
+    if not (is_number(latitude) and is_number(longitude)):
+        return None
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return None
+    return place_id, latitude, longitude
+
+
+def fetch_static_map(api_key: str, latitude: float, longitude: float) -> tuple[bytes, str]:
+    """Load one map image with a pin at the place (Maps Static API) and return bytes and content type.
+
+    The key goes to Google as a URL parameter, but only from the server. Raises PlacesError
+    if anything goes wrong; the message never contains the key.
+    """
+    point = f"{latitude},{longitude}"
+    params = {
+        "center": point,
+        "zoom": STATIC_MAP_ZOOM,
+        "size": "600x300",
+        "scale": 2,
+        "markers": point,
+        "key": api_key,
+    }
+    try:
+        response = requests.get(STATIC_MAP_URL, params=params, timeout=TIMEOUT_SECONDS)
+    except requests.RequestException:
+        # "from None": the original error text contains the URL, and with it the key.
+        raise PlacesUnavailable("Google Maps could not be reached.") from None
+    if response.status_code != 200:
+        raise PlacesError(f"Google Maps answered with status {response.status_code}.")
+    content_type = response.headers.get("Content-Type", "")
+    if not content_type.startswith("image/"):
+        raise PlacesError("Google Maps did not send an image.")
+    return response.content, content_type
 
 
 # --- C3: map and route to the winner -----------------------------------------
