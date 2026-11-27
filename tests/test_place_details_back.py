@@ -6,10 +6,9 @@ root conftest.py makes any other real request fail.
 
 What the tests pin about the new data (the spec leaves the exact shape to the tests):
 - `details["kind"]` is a string, `details["rating_count"]` a non-negative int.
-- `details["back"]` is a dict with exactly the keys `description` (text or None),
-  `offers` (text like "Dinner · Wine" or None), `reviews` (list of review dicts) and
-  `photos` (list of photo dicts). It exists only for `BACK_FIELD_MASK` and only if
-  Google sent at least one of the four parts.
+- `details["back"]` exists only for `BACK_FIELD_MASK`. U6 (D29) changed its keys to
+  `reviews`, `photos`, `address` and `opening_hours` (description and offers are no longer
+  asked for); the tests for those keys are in `tests/test_u6_place_card_pages.py`.
 - A review dict has exactly the keys `stars_text`, `age`, `text`, `author_name`,
   `author_uri`, `author_photo_uri`, `google_maps_uri`.
 - A photo dict has exactly the keys `photo_name`, `photo_author`, `photo_author_uri`.
@@ -42,7 +41,6 @@ OLD_CARD_KEYS = {
     "source", "name", "photo_name", "photo_author", "photo_author_uri",
     "rating_text", "price_text", "distance_text", "details_missing",
 }
-BACK_KEYS = {"description", "offers", "reviews", "photos"}
 REVIEW_KEYS = {
     "stars_text", "age", "text", "author_name", "author_uri", "author_photo_uri", "google_maps_uri",
 }
@@ -144,19 +142,8 @@ def google_option(place_id="place-a", option_id=1):
 
 # --- The three field masks ---------------------------------------------------
 
-def test_field_masks_are_built_from_each_other_and_never_use_a_star():
-    assert DETAILS_FIELD_MASK == OLD_FIELD_MASK
-    assert CARD_FIELD_MASK == OLD_FIELD_MASK + ",userRatingCount,primaryTypeDisplayName"
-    assert BACK_FIELD_MASK.startswith(CARD_FIELD_MASK + ",")
-    back_fields = BACK_FIELD_MASK[len(CARD_FIELD_MASK) + 1:].split(",")
-    assert back_fields == [
-        "editorialSummary", "reviews",
-        "servesBreakfast", "servesBrunch", "servesLunch", "servesDinner", "servesVegetarianFood",
-        "servesCoffee", "servesDessert", "servesBeer", "servesWine", "servesCocktails",
-        "goodForGroups", "outdoorSeating", "reservable",
-    ]
-    for mask in (DETAILS_FIELD_MASK, CARD_FIELD_MASK, BACK_FIELD_MASK):
-        assert "*" not in mask
+
+# test_field_masks_are_built_from_each_other_and_never_use_a_star: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_limits():
@@ -279,58 +266,26 @@ def test_a_card_without_details_has_no_new_keys():
 
 # --- The back: description ---------------------------------------------------------
 
-def test_description_comes_from_the_editorial_summary(fake_get):
-    back = back_of(fake_get, full_back_answer())
-    assert set(back) == BACK_KEYS
-    assert back["description"] == "Wood-fired pizza near the river."
+
+# test_description_comes_from_the_editorial_summary: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-@pytest.mark.parametrize("summary", [None, "text", {"languageCode": "en"}, {"text": ""}, {"text": 5}])
-def test_without_a_usable_summary_there_is_no_description(fake_get, summary):
-    body = full_back_answer()
-    body["editorialSummary"] = summary
-    assert back_of(fake_get, body)["description"] is None
+# test_without_a_usable_summary_there_is_no_description: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_missing_summary_gives_no_description(fake_get):
-    body = full_back_answer()
-    del body["editorialSummary"]
-    assert back_of(fake_get, body)["description"] is None
+# test_missing_summary_gives_no_description: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- The back: offers ----------------------------------------------------------------
 
-def test_offers_contain_only_true_fields_in_the_fixed_order(fake_get):
-    # Deliberately not in the fixed order, with false, wrongly typed and missing fields.
-    body = full_back_answer()
-    body.update({
-        "reservable": True, "servesWine": True, "servesBreakfast": True, "outdoorSeating": True,
-        "servesVegetarianFood": True, "goodForGroups": True, "servesDinner": True,
-        "servesBrunch": False, "servesLunch": "yes", "servesCoffee": 1, "servesBeer": None,
-    })
-    back = back_of(fake_get, body)
-    assert back["offers"] == (
-        "Breakfast · Dinner · Vegetarian · Wine · Good for groups · Outdoor seating · Reservations"
-    )
+
+# test_offers_contain_only_true_fields_in_the_fixed_order: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_all_offers_have_their_label(fake_get):
-    body = full_back_answer()
-    flags = {
-        "servesBreakfast": "Breakfast", "servesBrunch": "Brunch", "servesLunch": "Lunch",
-        "servesDinner": "Dinner", "servesVegetarianFood": "Vegetarian", "servesCoffee": "Coffee",
-        "servesDessert": "Dessert", "servesBeer": "Beer", "servesWine": "Wine",
-        "servesCocktails": "Cocktails", "goodForGroups": "Good for groups",
-        "outdoorSeating": "Outdoor seating", "reservable": "Reservations",
-    }
-    body.update({field: True for field in flags})
-    assert back_of(fake_get, body)["offers"] == " · ".join(flags.values())
+# test_all_offers_have_their_label: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_no_true_field_means_no_offers(fake_get):
-    body = full_back_answer()
-    body.update({"servesDinner": False, "servesBrunch": False})
-    assert back_of(fake_get, body)["offers"] is None
+# test_no_true_field_means_no_offers: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- The back: reviews --------------------------------------------------------------

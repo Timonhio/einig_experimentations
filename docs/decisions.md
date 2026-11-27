@@ -388,6 +388,19 @@ Proposal by Timo (issue #95), third part.
 
 **Task:** U3 (`specs/u3-invite-groups.md`, branch `ux-3-invite-groups`, on top of U1 and U2), tests in `tests/test_u3_invite_groups.py`.
 
+## D29 – U6: place card in three pages (2026-11-27)
+
+Proposal by Timo. The rating card looked cheap: the facts were one line of text, and where the place is and when it is open were missing or hidden behind the flip.
+
+- **The rating card has three pages instead of a front and a back:** 1. a map image, a round photo, name, kind, rating with stars and the number of reviews, chips (distance, price, today's hours, each only when Google sent it), the short address and the one Google Maps button; 2. one big and up to three small photos with their authors, and the opening hours of the week with today marked; 3. up to three reviews, each cut to four lines by CSS so the page never scrolls.
+- **Tap on the right half: next page, left half: previous page;** three bars at the top show the page. Swiping still rates on every page. Without JavaScript the bars are links and CSS shows the targeted page (`:target`). The card no longer flips (no checkbox, no labels).
+- **The map image goes through our own route `/map/<token>`**: place id and location signed with `SECRET_KEY` (`itsdangerous`, part of Flask: no new dependency), only for a browser in a room with that place (404 otherwise, as for photos), one Maps Static API call, cached like photos, 503 without a key or on a Google error. The key stays on the server.
+- **`BACK_FIELD_MASK`** is now `CARD_FIELD_MASK` plus `reviews,currentOpeningHours,shortFormattedAddress,utcOffsetMinutes`; description and "serves" fields are no longer asked for. Still one call for the one card; nothing new is stored.
+- **Differs from the proposal:** the Google Maps button keeps A10's text *Menu & reviews on Google Maps* and link, and C2c's facts line `4.5 ★ · €€ · 330 m` stays as a small line on page 1, because reviewed tests outside the replaced files pin both; `utcOffsetMinutes` is added so "today" is the day at the place. Details in the spec, "Decisions for Timo".
+- **The flip tests are replaced** with Timo's OK as owner of the fork: 13 tests in `tests/test_rating_card_back.py`, 15 in `tests/test_fullscreen_card.py`, 7 in `tests/test_place_details_back.py`, each by named tests in `tests/test_u6_place_card_pages.py` (exact list in the spec). No test was removed without a replacement.
+
+**Task:** U6 (`specs/u6-place-card-pages.md`, branch `ux-6-place-card-pages`), tests in `tests/test_u6_place_card_pages.py`.
+
 ## Open questions
 
 - Final app name.

@@ -330,131 +330,47 @@ def css_rules():
 
 # --- The three pages on the back -------------------------------------------------------
 
-def test_the_back_has_three_pages_in_the_order_about_photos_reviews(app, client):
-    html, room_id, ids = rating_page(app, client)
-    names = [attributes["data-card-page"] for attributes, _ in elements_with(back_html_of(html), "data-card-page")]
-    assert names == PAGE_NAMES
+
+# test_the_back_has_three_pages_in_the_order_about_photos_reviews: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_about_page_has_description_offers_and_the_one_menu_link(app, client):
-    html, room_id, ids = rating_page(app, client)
-    about = pages_of(html)["about"]
-    text = html_lib.unescape(about)
-    assert "Wood-fired pizza near the river." in text
-    assert "Dinner · Wine · Outdoor seating" in text
-    assert menu_links(about) == [places.place_page_url("place-a", "Pizza Roma")]
-    assert REVIEWS_LINE not in text and "Review text" not in text
-    assert "/photo/" not in about
+# test_about_page_has_description_offers_and_the_one_menu_link: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_photos_page_has_the_extra_photos_with_their_authors(app, client):
-    html, room_id, ids = rating_page(app, client)
-    photos = pages_of(html)["photos"]
-    sources = [item["src"] for item in tags(photos, "img")]
-    assert sources == [f"/photo/places/place-a/photos/ref-{number}" for number in (2, 3, 4)]
-    assert all(item.get("loading") == "lazy" for item in tags(photos, "img"))
-    maria = [link for link in links_in(photos) if link[3] == "Maria Silva"]
-    assert len(maria) == 3
-    assert all(link[1:3] == ("_blank", "noopener noreferrer") for link in maria)
-    assert "Review text" not in html_lib.unescape(photos)
+# test_photos_page_has_the_extra_photos_with_their_authors: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_reviews_page_has_the_reviews_line_and_three_reviews_unchanged(app, client):
-    html, room_id, ids = rating_page(app, client)
-    reviews = pages_of(html)["reviews"]
-    text = html_lib.unescape(reviews)
-    assert REVIEWS_LINE in text
-    for number in (1, 2, 3):
-        assert f"Review text {number}" in text
-        assert f"{number} weeks ago" in text
-        assert f"Author {number}" in text
-    assert "Review text 4" not in text
-    links = links_in(reviews)
-    for number in (1, 2, 3):
-        assert (f"https://www.google.com/maps/contrib/{number}", "_blank", "noopener noreferrer", f"Author {number}") in links
-        assert (f"https://www.google.com/maps/reviews/{number}", "_blank", "noopener noreferrer", READ_TEXT) in links
-    pictures = [item for item in tags(reviews, "img") if "googleusercontent" in item.get("src", "")]
-    assert [item["src"] for item in pictures] == [f"https://lh3.googleusercontent.com/a/{n}" for n in (1, 2, 3)]
-    assert "Wood-fired" not in text and "/photo/" not in reviews
+# test_reviews_page_has_the_reviews_line_and_three_reviews_unchanged: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_the_back_stays_a_single_back_with_the_close_label(app, client):
-    html, room_id, ids = rating_page(app, client)
-    assert len(elements_with(html, "data-card-back")) == 1
-    assert CLOSE_TEXT in html_lib.unescape(back_html_of(html))
-    assert OPEN_TEXT not in html_lib.unescape(back_html_of(html))
+# test_the_back_stays_a_single_back_with_the_close_label: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_a_page_without_content_says_so_and_the_back_keeps_three_pages_and_dots(app, client, google):
-    body = back_answer()
-    del body["reviews"]
-    body["photos"] = [photo("place-a", 1)]  # only the front photo: no extra photos
-    google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=body)
-    html, room_id, ids = rating_page(app, client)
-    pages = pages_of(html)
-    assert list(pages) == PAGE_NAMES
-    assert NO_DETAILS_TEXT in html_lib.unescape(pages["photos"])
-    assert NO_DETAILS_TEXT in html_lib.unescape(pages["reviews"])
-    assert NO_DETAILS_TEXT not in html_lib.unescape(pages["about"])
-    assert len(elements_with(back_html_of(html), "data-card-dot")) == 3
+# test_a_page_without_content_says_so_and_the_back_keeps_three_pages_and_dots: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_when_google_sends_no_back_details_the_empty_pages_say_so(app, client, google):
-    google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=front_answer())
-    html, room_id, ids = rating_page(app, client)
-    pages = pages_of(html)
-    assert list(pages) == PAGE_NAMES
-    assert NO_DETAILS_TEXT in html_lib.unescape(pages["photos"])
-    assert NO_DETAILS_TEXT in html_lib.unescape(pages["reviews"])
-    assert len(elements_with(back_html_of(html), "data-card-dot")) == 3
+# test_when_google_sends_no_back_details_the_empty_pages_say_so: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- The three dots ------------------------------------------------------------------------
 
-def test_three_dots_link_to_the_three_pages_and_the_first_is_current(app, client):
-    html, room_id, ids = rating_page(app, client)
-    option_id = ids["place-a"]
-    back_html = back_html_of(html)
-    dots = elements_with(back_html, "data-card-dot")
-    assert len(dots) == 3
-    page_ids = page_ids_of(html)
-    assert page_ids == [f"card-page-{option_id}-{name}" for name in PAGE_NAMES]
-    for (attributes, _), page_id, number, name in zip(dots, page_ids, (1, 2, 3), PAGE_NAMES):
-        assert attributes["href"] == f"#{page_id}"
-        assert attributes["aria-label"] == f"Page {number} of 3: {PAGE_TITLES[name]}"
-    assert dots[0][0].get("aria-current") == "true"
-    assert all("aria-current" not in attributes for attributes, _ in dots[1:])
+
+# test_three_dots_link_to_the_three_pages_and_the_first_is_current: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_the_dots_come_after_the_pages_inside_the_back(app, client):
-    html, room_id, ids = rating_page(app, client)
-    back_html = back_html_of(html)
-    assert back_html.index("data-card-dot") > back_html.rindex("data-card-page")
-    # Dots are only on the back, never on the front.
-    assert "data-card-dot" not in elements_with(html, "data-swipe-area")[0][1]
+# test_the_dots_come_after_the_pages_inside_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- One menu link, on the about page ----------------------------------------------------------
 
-def test_exactly_one_menu_link_on_the_rating_page_and_it_is_on_the_about_page(app, client):
-    html, room_id, ids = rating_page(app, client)
-    expected = places.place_page_url("place-a", "Pizza Roma")
-    assert menu_links(html) == [expected]
-    assert menu_links(pages_of(html)["about"]) == [expected]
+
+# test_exactly_one_menu_link_on_the_rating_page_and_it_is_on_the_about_page: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- Front: the only swipe area ---------------------------------------------------------------------
 
-def test_the_front_is_the_only_swipe_area_and_the_back_has_no_rating_buttons(app, client):
-    html, room_id, ids = rating_page(app, client)
-    assert len(elements_with(html, "data-swipe-area")) == 1
-    back_html = back_html_of(html)
-    assert "data-swipe-area" not in back_html
-    assert 'name="rating"' not in back_html
-    assert "<form" not in back_html
-    area_html = elements_with(html, "data-swipe-area")[0][1]
-    assert "Pizza Roma" in area_html and "/photo/places/place-a/photos/ref-1" in area_html
-    assert "data-card-page" not in area_html
+
+# test_the_front_is_the_only_swipe_area_and_the_back_has_no_rating_buttons: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- The buttons stay, out of sight ----------------------------------------------------------------------
@@ -517,12 +433,7 @@ def test_the_joker_question_is_hidden_and_has_the_name_and_both_buttons(app, cli
     assert 'name="rating"' not in inner and "<form" not in inner
 
 
-def test_the_joker_question_is_inside_the_card_but_not_in_the_swipe_area_or_the_back(app, client):
-    html, room_id, ids = rating_page(app, client)
-    card_html = elements_with(html, "data-swipe-card")[0][1]
-    assert "data-joker-question" in card_html
-    assert "data-joker-question" not in elements_with(html, "data-swipe-area")[0][1]
-    assert "data-joker-question" not in back_html_of(html)
+# test_the_joker_question_is_inside_the_card_but_not_in_the_swipe_area_or_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_a_manual_option_gets_the_joker_question_with_its_label(app, client):
@@ -663,32 +574,16 @@ def test_the_api_key_never_appears_in_the_page(app, client):
     assert FAKE_KEY not in html and "key=" not in html
 
 
-def test_text_from_google_is_escaped_on_every_page_of_the_back(app, client, google):
-    body = back_answer()
-    body["editorialSummary"] = {"text": "<script>alert(1)</script>"}
-    body["reviews"] = [review(1, text={"text": "<b>Great</b> & cheap"})]
-    google.responses[DETAILS_URL + "place-a"] = FakeResponse(body=body)
-    html, room_id, ids = rating_page(app, client)
-    assert "<script>alert(1)</script>" not in html and "<b>Great</b>" not in html
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in pages_of(html)["about"]
-    assert "&lt;b&gt;Great&lt;/b&gt; &amp; cheap" in pages_of(html)["reviews"]
+# test_text_from_google_is_escaped_on_every_page_of_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 # --- CSS and swipe.js ----------------------------------------------------------------------------------------------------------
 
-def test_the_css_makes_the_back_a_horizontal_scroll_snap_container():
-    text = APP_CSS.read_text()
-    assert "scroll-snap-type: x mandatory" in text
-    assert "overflow-y: auto" in text  # long content scrolls inside a page
+
+# test_the_css_makes_the_back_a_horizontal_scroll_snap_container: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
-def test_swipe_js_handles_the_joker_question_the_dots_and_the_tap_on_the_back():
-    source = SWIPE_JS.read_text()
-    assert "[data-joker-question]" in source
-    assert "[data-card-dot]" in source and "aria-current" in source
-    assert "[data-card-back]" in source
-    assert "[data-flip-toggle]" in source and ".click()" in source
-    assert 'closest("a")' in source
+# test_swipe_js_handles_the_joker_question_the_dots_and_the_tap_on_the_back: replaced by U6 (see specs/u6-place-card-pages.md).
 
 
 def test_swipe_js_still_passes_the_a10_static_check():
